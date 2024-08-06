@@ -1,2 +1,7 @@
-/build
-/target
+/target/
+.idea/
+build/
+qemu.log
+.gdb_history
+output.txt
+rustfmt.toml

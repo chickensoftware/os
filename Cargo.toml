@@ -1,8 +1,8 @@
-[package]
-name = "os"
-version = "0.1.0"
-edition = "2021"
+[workspace]
 
-[dependencies]
-log = "0.4.22"
-uefi = { version = "0.29.0", features = ["logger", "panic_handler"] }
+members = [
+    "chicken-kernel",
+    "chicken-loader",
+    "chicken-util",
+]
+resolver = "2"
