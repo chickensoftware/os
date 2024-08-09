@@ -21,6 +21,7 @@
   },
   "post-link-args": {
     "ld.lld": [
+      "--entry=_start",
       "--static"
     ]
   },

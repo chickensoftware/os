@@ -5,4 +5,7 @@ edition = "2021"
 
 [dependencies]
 log = "0.4.22"
-uefi = { version = "0.30.0", features = ["logger"] }
+uefi = { version = "0.30.0", features = ["logger", "global_allocator", "alloc"] }
+goblin = { version = "0.8.2", default-features = false, features = ["elf64", "elf32", "endian_fd"] }
+qemu_print = "0.1.0"
+chicken-util = { path = "../chicken-util"}
