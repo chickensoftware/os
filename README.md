@@ -39,7 +39,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [x] Basic Bootloader
 
 ### Kernel Architecture 
-- [ ] Global Descriptor Table
+- [x] Global Descriptor Table
 - [ ] Interrupt Handling
 - [ ] ACPI Tables
 - [ ] APIC IO
