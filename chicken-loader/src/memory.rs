@@ -11,6 +11,7 @@ use uefi::{
         Boot, SystemTable,
     },
 };
+use uefi::data_types::VirtualAddress;
 
 use chicken_util::{
     memory::{paging::PageTable, PhysicalAddress},
@@ -48,13 +49,19 @@ pub(super) fn allocate_kernel_stack(bt: &BootServices) -> Result<(PhysicalAddres
 pub(super) fn set_up_address_space(
     system_table: &mut SystemTable<Boot>,
     kernel_info: KernelInfo,
-) -> Result<PhysicalAddress, String> {
+) -> Result<(PhysicalAddress, VirtualAddress), String> {
     let KernelInfo { kernel_file_start_addr, kernel_file_num_pages, kernel_stack_start_addr, kernel_stack_num_pages } = kernel_info;
 
     let pml4_addr = system_table
         .boot_services()
         .allocate_pages(AnyPages, MemoryType::LOADER_DATA, 1)
         .map_err(|_| "Could not allocate new page table".to_string())?;
+
+    assert_eq!(
+        (pml4_addr as usize) % align_of::<PageTable>(),
+        0,
+        "pml4 pointer is not aligned"
+    );
 
     let pml4_table = pml4_addr as *mut PageTable;
 
@@ -81,7 +88,9 @@ pub(super) fn set_up_address_space(
         .max()
         .ok_or("Memory map is empty".to_string())?;
 
-    for physical_address in (first_addr..last_addr).step_by(PAGE_SIZE) {
+    let num_pages = (last_addr - first_addr) as usize / PAGE_SIZE;
+    for page in 0..num_pages {
+        let physical_address = (PAGE_SIZE * page) as u64 + first_addr;
         manager
             .map_memory(physical_address, physical_address)
             .map_err(|_| {
@@ -93,11 +102,8 @@ pub(super) fn set_up_address_space(
     }
 
     // map higher half kernel virtual addresses to physical kernel addresses
-    let kernel_file_end_addr = kernel_file_start_addr + (kernel_file_num_pages * PAGE_SIZE) as u64;
-
-    for physical_address in
-        (kernel_file_start_addr..kernel_file_end_addr).step_by(PAGE_SIZE)
-    {
+    for page in 0..kernel_file_num_pages {
+        let physical_address = (PAGE_SIZE * page) as u64 + kernel_file_start_addr;
         let virtual_address = KERNEL_MAPPING_OFFSET + physical_address;
         manager
             .map_memory(virtual_address, physical_address)
@@ -108,12 +114,11 @@ pub(super) fn set_up_address_space(
                 )
             })?;
     }
-
     // map kernel stack directly behind kernel code (file)
-    let kernel_stack_end_addr = kernel_stack_start_addr + (kernel_stack_num_pages * PAGE_SIZE) as u64;
-
-    for physical_address in (kernel_stack_start_addr..kernel_stack_end_addr).step_by(PAGE_SIZE) {
-        let virtual_address = (kernel_file_end_addr + KERNEL_MAPPING_OFFSET) + physical_address;
+    let kernel_stack_virtual_start_addr = (PAGE_SIZE * kernel_file_num_pages) as u64 + kernel_file_start_addr + KERNEL_MAPPING_OFFSET;
+    for page in 0..kernel_stack_num_pages {
+        let physical_address = (page * PAGE_SIZE) as u64 + kernel_stack_start_addr;
+        let virtual_address = kernel_stack_virtual_start_addr + (page * PAGE_SIZE) as u64;
         manager
             .map_memory(virtual_address, physical_address)
             .map_err(|_| {
@@ -124,10 +129,10 @@ pub(super) fn set_up_address_space(
             })?;
     }
 
-    Ok(pml4_addr)
+    Ok((pml4_addr, kernel_stack_virtual_start_addr + KERNEL_STACK_SIZE as u64))
 }
 
-/// Wrapper for BootServices that allows PageFrameAllocator implementation 
+/// Wrapper for BootServices that allows PageFrameAllocator implementation
 struct BootServiceWrapper<'a>(&'a BootServices);
 
 impl<'a> PageFrameAllocator<'a, String> for BootServiceWrapper<'a> {

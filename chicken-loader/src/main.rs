@@ -24,7 +24,7 @@ mod memory;
 const KERNEL_FILE_NAME: &str = "kernel.elf";
 
 const KERNEL_MAPPING_OFFSET: u64 = 0xFFFFFFFF80000000;
-const KERNEL_STACK_SIZE: usize = 16 * 1024; // 16 KiB
+const KERNEL_STACK_SIZE: usize = 1024 * 1024; // 1 MB
 
 macro_rules! println {
     ($s:expr, $stdout:expr) => {
@@ -101,7 +101,6 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     validate!(kernel_elf, stdout);
     let (kernel_entry_addr, kernel_file_start_addr, kernel_file_num_pages) = kernel_elf.unwrap();
-
     println!(
         format!("boot: Kernel entry address: {:#x}", kernel_entry_addr).as_str(),
         stdout
@@ -124,7 +123,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     );
 
     // setup paging + virtual address space for higher half kernel
-    let pml4_addr = set_up_address_space(
+    let address_space_info = set_up_address_space(
         &mut system_table,
         KernelInfo {
             kernel_file_start_addr,
@@ -135,9 +134,8 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     );
     let stdout = system_table.stdout();
 
-    validate!(pml4_addr, stdout);
-    let pml4_addr = pml4_addr.unwrap();
-
+    validate!(address_space_info, stdout);
+    let (pml4_addr, kernel_stack_addr) = address_space_info.unwrap();
     // Exit boot services and handover control to kernel
     println!(
         "boot: Dropping boot services. Chicken OS is hatching...",
@@ -153,7 +151,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         "mov cr3, {0}",
         "mov rsp, {1}",
         in(reg) pml4_addr,
-        in(reg) kernel_stack_start_addr
+        in(reg) kernel_stack_addr
         );
     }
 
