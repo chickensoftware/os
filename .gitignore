@@ -5,3 +5,4 @@ qemu.log
 .gdb_history
 output.txt
 rustfmt.toml
+notes.txt

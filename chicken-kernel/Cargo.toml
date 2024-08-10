@@ -4,4 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+spin = "0.9.8"
+bitflags = "2.6.0"
 qemu_print = "0.1.0"
