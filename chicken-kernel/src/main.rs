@@ -6,13 +6,14 @@ use core::panic::PanicInfo;
 
 use qemu_print::qemu_println;
 
-mod gdt;
+mod base;
+mod scheduling;
 
 #[no_mangle]
 pub extern "sysv64" fn kernel_main() -> ! {
     qemu_println!("Hello, Chicken OS :)");
 
-    gdt::initialize();
+    base::setup();
     qemu_println!("It did not crash.");
     hlt_loop();
 }

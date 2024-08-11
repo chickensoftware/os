@@ -1,16 +1,16 @@
 use core::cell::OnceCell;
 
 use bitflags::bitflags;
-use spin::Mutex;
 
-// note: for now using spin crate. Will be replaced by custom spin lock implementation later.
-static GDT: Mutex<OnceCell<GlobalDescriptorTable>> = Mutex::new(OnceCell::new());
+use crate::scheduling::spin::SpinLock;
+
+static GDT: SpinLock<OnceCell<GlobalDescriptorTable>> = SpinLock::new(OnceCell::new());
 
 extern "C" {
     fn load_gdt(gdt: *const GdtDescriptor);
 }
 
-pub fn initialize() {
+pub(super) fn initialize() {
     let gdt_lock = GDT.lock();
     let gdt = gdt_lock.get_or_init(GlobalDescriptorTable::new);
 
@@ -73,7 +73,7 @@ impl SegmentDescriptor {
 #[allow(dead_code)]
 #[repr(align(0x1000))]
 #[derive(Copy, Clone, Debug)]
-pub struct GlobalDescriptorTable {
+struct GlobalDescriptorTable {
     null: SegmentDescriptor,
     kernel_code: SegmentDescriptor,
     kernel_data: SegmentDescriptor,
@@ -124,6 +124,4 @@ bitflags! {
         /// Granularity flag, indicates the size the Limit value is scaled by. If clear (0), the Limit is in 1 Byte blocks (byte granularity). If set (1), the Limit is in 4 KiB blocks (page granularity).
         const GRANULARITY           = 1 << 7;
     }
-
-
 }

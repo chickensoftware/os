@@ -60,7 +60,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [ ] Scheduler
 - [ ] Processes
 - [ ] Threads
-- [ ] Locks
+- [x] Spin Lock
 
 ### Userspace
 - [ ] Switching Modes
