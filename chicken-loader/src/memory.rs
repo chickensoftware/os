@@ -79,15 +79,16 @@ pub(super) fn set_up_address_space(
         .map_err(|_| "Could not get memory map.".to_string())?;
     let first_addr = mmap
         .entries()
+        .filter(|desc| matches!(desc.ty, MemoryType::CONVENTIONAL | MemoryType::BOOT_SERVICES_DATA | MemoryType::BOOT_SERVICES_CODE) && desc.phys_start > 0x0) // skip areas like 0x0
         .map(|desc| desc.phys_start)
         .min()
         .ok_or("Memory map is empty".to_string())?;
     let last_addr = mmap
         .entries()
+        .filter(|desc| matches!(desc.ty, MemoryType::CONVENTIONAL | MemoryType::BOOT_SERVICES_DATA| MemoryType::BOOT_SERVICES_CODE))
         .map(|desc| desc.phys_start + PAGE_SIZE as u64 * desc.page_count)
         .max()
         .ok_or("Memory map is empty".to_string())?;
-
     let num_pages = (last_addr - first_addr) as usize / PAGE_SIZE;
     for page in 0..num_pages {
         let physical_address = (PAGE_SIZE * page) as u64 + first_addr;
