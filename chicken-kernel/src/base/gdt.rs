@@ -4,6 +4,8 @@ use bitflags::bitflags;
 
 use crate::scheduling::spin::SpinLock;
 
+pub(crate) const CS: u16 = 0x08;
+
 static GDT: SpinLock<OnceCell<GlobalDescriptorTable>> = SpinLock::new(OnceCell::new());
 
 extern "C" {

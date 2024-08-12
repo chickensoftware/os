@@ -4,17 +4,16 @@
 use core::arch::asm;
 use core::panic::PanicInfo;
 
-use qemu_print::qemu_println;
-
 mod base;
 mod scheduling;
+mod video;
 
 #[no_mangle]
 pub extern "sysv64" fn kernel_main() -> ! {
-    qemu_println!("Hello, Chicken OS :)");
-
     base::setup();
-    qemu_println!("It did not crash.");
+
+    println!("Hello, Chicken OS :)");
+    println!("It did not crash.");
     hlt_loop();
 }
 

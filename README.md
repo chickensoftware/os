@@ -40,7 +40,8 @@ make usb USB_DEVICE=/dev/<device> release=true
 
 ### Kernel Architecture 
 - [x] Global Descriptor Table
-- [ ] Interrupt Handling
+- [x] Interrupt Handling
+- [ ] Complete ISR
 - [ ] ACPI Tables
 - [ ] APIC IO
 - [ ] Timer
@@ -55,6 +56,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 ### Video Output
 - [ ] Framebuffer
 - [ ] Text & Fonts
+- [ ] Global Writer
 
 ### Scheduling
 - [ ] Scheduler
