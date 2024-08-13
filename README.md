@@ -49,7 +49,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 
 ### Memory Management
 - [x] Custom Memory Map
-- [ ] Physical Memory Manager
+- [x] Physical Memory Manager
 - [ ] Paging
 - [ ] Virtual Memory Manager
 - [ ] Heap Allocator

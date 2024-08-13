@@ -3,6 +3,7 @@ use bitflags::bitflags;
 pub mod index;
 pub mod manager;
 
+pub const KERNEL_MAPPING_OFFSET: u64 = 0xFFFFFFFF80000000;
 
 bitflags! {
     #[derive(Copy, Clone, Debug)]

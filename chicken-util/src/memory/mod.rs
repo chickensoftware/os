@@ -5,16 +5,16 @@ pub mod paging;
 pub type VirtualAddress = u64;
 pub type PhysicalAddress = u64;
 #[repr(C)]
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
 pub struct MemoryMap {
     /// Pointer to memory map descriptors
     pub descriptors: *mut MemoryDescriptor,
     /// Length of memory that descriptors occupy in bytes
     pub descriptors_len: u64,
     /// First valid address of physical address space
-    pub first_available_addr: PhysicalAddress,
+    pub first_addr: PhysicalAddress,
     /// Last valid address of physical address space
-    pub last_available_addr: PhysicalAddress,
+    pub last_addr: PhysicalAddress,
 
 }
 

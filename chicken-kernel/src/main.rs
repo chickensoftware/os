@@ -9,16 +9,13 @@ use chicken_util::BootInfo;
 mod base;
 mod scheduling;
 mod video;
+mod memory;
 
 #[no_mangle]
 pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     video::setup();
     base::setup();
-
-    println!("{:#?}", boot_info);
-
-    println!("memory descriptors:");
-    boot_info.memory_map.descriptors().iter().for_each(|desc| println!("{:?}", desc));
+    memory::setup(boot_info);
 
     println!("It did not crash.");
     hlt_loop();

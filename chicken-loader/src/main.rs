@@ -15,7 +15,7 @@ use uefi::{
     Status, table::{Boot, boot::MemoryType, Runtime, SystemTable},
 };
 
-use chicken_util::{BootInfo, PAGE_SIZE};
+use chicken_util::{BootInfo, PAGE_SIZE, memory::paging::KERNEL_MAPPING_OFFSET};
 
 use crate::memory::{
     allocate_boot_info, allocate_kernel_stack, KERNEL_CODE, KERNEL_DATA, KERNEL_STACK,
@@ -27,7 +27,6 @@ mod memory;
 
 const KERNEL_FILE_NAME: &str = "kernel.elf";
 
-const KERNEL_MAPPING_OFFSET: u64 = 0xFFFFFFFF80000000;
 const KERNEL_STACK_SIZE: usize = 1024 * 1024; // 1 MB
 
 macro_rules! println {
@@ -195,13 +194,20 @@ fn drop_boot_services(
     // drop boot services
     let (runtime, uefi_mmap) = unsafe { system_table.exit_boot_services(MemoryType::LOADER_DATA) };
 
-    let mut first_available_addr = u64::MAX;
-    let mut last_available_addr = u64::MIN;
+    let mut first_addr = u64::MAX;
+    let mut last_addr = u64::MIN;
     let desc_start_addr = descriptors.as_ptr() as u64;
     let desc_end_addr = desc_start_addr + (descriptors.capacity() * size_of::<ChickenMemoryDescriptor>()) as u64;
     // collect available memory descriptors (convert uefi mmap to chicken mmap)
     uefi_mmap.entries().for_each(|descriptor| {
         let phys_end = descriptor.phys_start + descriptor.page_count * PAGE_SIZE as u64;
+
+        if descriptor.phys_start < first_addr {
+            first_addr = descriptor.phys_start;
+        }
+        if phys_end > last_addr {
+            last_addr = phys_end
+        };
 
         if descriptor.phys_start < 0x1000 {
             descriptors.push(ChickenMemoryDescriptor {
@@ -223,12 +229,6 @@ fn drop_boot_services(
             return;
         }
 
-        if descriptor.phys_start < first_available_addr {
-            first_available_addr = descriptor.phys_start;
-        }
-        if phys_end > last_available_addr {
-            last_available_addr = phys_end
-        };
 
         let r#type = match descriptor.ty {
             MemoryType::CONVENTIONAL
@@ -255,8 +255,8 @@ fn drop_boot_services(
         ChickenMemoryMap {
             descriptors: ptr as *mut ChickenMemoryDescriptor,
             descriptors_len: len as u64,
-            first_available_addr,
-            last_available_addr,
+            first_addr,
+            last_addr,
         },
     )
 }
