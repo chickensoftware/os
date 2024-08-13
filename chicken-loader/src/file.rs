@@ -5,13 +5,12 @@ use alloc::{
 };
 use core::slice;
 
-use goblin::{elf32::program_header::PT_LOAD, elf::Elf};
-use uefi::{CString16, fs::FileSystem, Handle, prelude::BootServices, table::boot::AllocateType};
-
 use chicken_util::{
     memory::{PhysicalAddress, VirtualAddress},
     PAGE_SIZE,
 };
+use goblin::{elf::Elf, elf32::program_header::PT_LOAD};
+use uefi::{fs::FileSystem, prelude::BootServices, table::boot::AllocateType, CString16, Handle};
 
 use crate::memory::KERNEL_CODE;
 
@@ -44,7 +43,6 @@ pub(super) fn load_elf(
 
     let mut dest_start = u64::MAX;
     let mut dest_end = 0;
-
 
     if !elf.is_64 {
         return Err("Invalid elf format.".to_string());

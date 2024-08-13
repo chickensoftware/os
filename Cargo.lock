@@ -37,6 +37,7 @@ name = "chicken-kernel"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.6.0",
+ "chicken-util",
  "qemu_print",
 ]
 

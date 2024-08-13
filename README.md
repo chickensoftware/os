@@ -38,7 +38,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [x] Higher Half Kernel Entry 
 - [x] Basic Bootloader
 
-### Kernel Architecture 
+### Kernel Base 
 - [x] Global Descriptor Table
 - [x] Interrupt Handling
 - [ ] Complete ISR
@@ -48,6 +48,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [ ] Keyboard support
 
 ### Memory Management
+- [x] Custom Memory Map
 - [ ] Physical Memory Manager
 - [ ] Paging
 - [ ] Virtual Memory Manager
