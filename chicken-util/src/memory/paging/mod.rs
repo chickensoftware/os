@@ -3,31 +3,55 @@ use bitflags::bitflags;
 pub mod index;
 pub mod manager;
 
-pub const KERNEL_MAPPING_OFFSET: u64 = 0xFFFFFFFF80000000;
+pub const KERNEL_MAPPING_OFFSET: u64 = 0xFFFF_FFFF_8000_0000;
+pub const KERNEL_STACK_MAPPING_OFFSET: u64 = 0xFFFF_FFFF_6000_0000;
 
 bitflags! {
     #[derive(Copy, Clone, Debug)]
     pub struct PageEntryFlags: u64 {
-        /// Page is actually in physical memory at the moment
+        /// Present: Page is actually in physical memory at the moment
         const PRESENT        = 1 << 0;
         /// Read/Write permission
         const READ_WRITE     = 1 << 1;
         /// Controls access to page based on privilege level
         const USER_SUPER     = 1 << 2;
-        /// Enables write-though caching
+        /// Page Write Though: Enables write-though caching
         const WRITE_THROUGH  = 1 << 3;
-        /// Disables cache entirely
+        /// Page Cache Disabled: Disables cache entirely
         const CACHE_DISABLED = 1 << 4;
-        /// Used to discover whether a PDE or PTE was read during virtual address translation
+        /// Accessed: Used to discover whether a PDE or PTE was read during virtual address translation
         const ACCESSED       = 1 << 5;
-        /// Determine whether a page has been written to
-        const DIRTY        = 1 << 6;
-        /// Turns next entry into huge page of size of page table it would have been
-        const LARGER_PAGES   = 1 << 7;
-        /// Global bit
-        const GLOBAL        = 1 << 8;
+        /// For Page Directory (Pointer) Entry / PML4: Available for use
+        ///
+        /// For Page Table Entry: Dirty: Determine whether a page has been written to
+        const DIRTY_AVL        = 1 << 6;
+        /// For Page Directory (Pointer) Entry / PML4: Page Size: Turns next entry into huge page of size of page table it would have been.
+        ///
+        /// For Page Table Entry: PAT: If PAT is supported, then PAT along with PCD and PWT shall indicate the memory caching type. Otherwise reserved-
+        const PAT_PAGE_SIZE   = 1 << 7;
+        /// For Page Directory (Pointer) Entry / PML4: Available for use
+        ///
+        /// For Page Table Entry: Global: Tells the processor not to invalidate the TLB entry corresponding to the page upon a MOV to CR3 instruction.
+        const GLOBAL_AVL        = 1 << 8;
         const AVAILABLE_MASK = 0b111 << 9;
+        /// For Page Directory (Pointer) Entry / PML4: Available for use
+        ///
+        /// For Page Table Entry: Protection Key: The protection key is a 4-bit corresponding to each virtual address that is used to control user-mode and supervisor-mode memory accesses.
+        const PROTECTION_KEY_AVL = 0b1111 << 59;
+        /// Execute Disable: If the NXE bit (bit 11) is set in the EFER register, then instructions are not allowed to be executed at addresses within the page whenever XD is set. If EFER.NXE bit is 0, then the XD bit is reserved and should be set to 0.
+        const EXECUTE_DISABLE = 1 << 63;
+    }
+}
 
+impl Default for PageEntryFlags {
+    fn default() -> Self {
+        PageEntryFlags::PRESENT | PageEntryFlags::READ_WRITE
+    }
+}
+
+impl PageEntryFlags {
+    pub fn default_nx() -> Self {
+        PageEntryFlags::PRESENT | PageEntryFlags::READ_WRITE | PageEntryFlags::EXECUTE_DISABLE
     }
 }
 

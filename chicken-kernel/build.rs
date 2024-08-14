@@ -7,7 +7,7 @@ fn main() {
     let asm_dir = manifest_dir.join("asm");
     println!("cargo:rustc-link-search={}", out_dir.display());
 
-    let asm_files = ["boot.asm", "interrupts.asm"];
+    let asm_files = ["boot.asm", "interrupts.asm", "msr.asm"];
 
     for asm_file in asm_files.iter() {
         // Generate the full path to the assembly file

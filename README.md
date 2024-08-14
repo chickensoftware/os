@@ -50,7 +50,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 ### Memory Management
 - [x] Custom Memory Map
 - [x] Physical Memory Manager
-- [ ] Paging
+- [x] Paging
 - [ ] Virtual Memory Manager
 - [ ] Heap Allocator
 

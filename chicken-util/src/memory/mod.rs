@@ -11,10 +11,14 @@ pub struct MemoryMap {
     pub descriptors: *mut MemoryDescriptor,
     /// Length of memory that descriptors occupy in bytes
     pub descriptors_len: u64,
-    /// First valid address of physical address space
+    /// First address of physical address space
     pub first_addr: PhysicalAddress,
-    /// Last valid address of physical address space
+    /// Last address of physical address space
     pub last_addr: PhysicalAddress,
+    /// First available address of physical address space
+    pub first_available_addr: PhysicalAddress,
+    /// Last available address of physical address space
+    pub last_available_addr: PhysicalAddress,
 
 }
 
@@ -65,4 +69,6 @@ pub enum MemoryType {
     KernelStack = 3,
     /// boot info, memory map
     KernelData = 4,
+    /// page tables set up by loader
+    LoaderPageTables = 5
 }

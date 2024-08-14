@@ -31,6 +31,3 @@ section .text
         push rax
         push rdi
         retfq
-
-
-

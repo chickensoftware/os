@@ -22,7 +22,8 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
 }
 
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+    println!("panic: {}", info);
     hlt_loop();
 }
 

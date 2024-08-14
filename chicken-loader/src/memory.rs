@@ -5,6 +5,16 @@ use alloc::{
 };
 use core::ptr;
 
+use chicken_util::{
+    memory::{
+        paging::{
+            manager::{PageFrameAllocator, PageTableManager},
+            PageEntryFlags, PageTable, KERNEL_STACK_MAPPING_OFFSET,
+        },
+        PhysicalAddress, VirtualAddress,
+    },
+    PAGE_SIZE,
+};
 use uefi::{
     prelude::BootServices,
     table::{
@@ -13,22 +23,12 @@ use uefi::{
     },
 };
 
-use chicken_util::{
-    memory::{
-        paging::{
-            manager::{PageFrameAllocator, PageTableManager},
-            PageTable,
-        },
-        PhysicalAddress, VirtualAddress,
-    },
-    PAGE_SIZE,
-};
-
 use crate::{ChickenMemoryDescriptor, KERNEL_MAPPING_OFFSET, KERNEL_STACK_SIZE};
 
 pub(super) const KERNEL_CODE: MemoryType = MemoryType::custom(0x80000000);
 pub(super) const KERNEL_STACK: MemoryType = MemoryType::custom(0x80000001);
 pub(super) const KERNEL_DATA: MemoryType = MemoryType::custom(0x80000002);
+pub(super) const LOADER_PAGING: MemoryType = MemoryType::custom(0x80000003);
 
 #[derive(Copy, Clone, Debug)]
 pub(super) struct KernelInfo {
@@ -41,7 +41,7 @@ pub(super) struct KernelInfo {
 
 /// Allocate pages for kernel stack. Returns physical address of allocated stack and amount of pages allocated.
 pub(super) fn allocate_kernel_stack(bt: &BootServices) -> Result<(PhysicalAddress, usize), String> {
-    let num_pages = KERNEL_STACK_SIZE / PAGE_SIZE;
+    let num_pages = (KERNEL_STACK_SIZE + PAGE_SIZE - 1) / PAGE_SIZE + 1; // + 1 to ENSURE sufficient size
     let start_addr = bt
         .allocate_pages(AnyPages, KERNEL_STACK, num_pages)
         .map_err(|_| {
@@ -77,7 +77,8 @@ pub(super) fn allocate_boot_info(
     Ok((boot_info_addr, descriptors))
 }
 
-/// Sets up paging that includes mappings for higher half kernel and higher half stack. Returns address pointing to page table manager, stack pointer. boot info .
+/// Sets up paging that includes mappings for higher half kernel and higher half stack. Returns address pointing to page table manager, stack pointer and boot info.
+// note: currently all page entry flags are set to the default value, may change to set up nx capability in bootloader already
 pub(super) fn set_up_address_space(
     system_table: &mut SystemTable<Boot>,
     kernel_info: KernelInfo,
@@ -92,7 +93,7 @@ pub(super) fn set_up_address_space(
 
     let pml4_addr = system_table
         .boot_services()
-        .allocate_pages(AnyPages, MemoryType::LOADER_DATA, 1)
+        .allocate_pages(AnyPages, LOADER_PAGING, 1)
         .map_err(|_| "Could not allocate new page table".to_string())?;
 
     assert_eq!(
@@ -142,11 +143,16 @@ pub(super) fn set_up_address_space(
         .map(|desc| desc.phys_start + PAGE_SIZE as u64 * desc.page_count)
         .max()
         .ok_or("Memory map is empty".to_string())?;
-    let num_pages = (last_addr - first_addr) as usize / PAGE_SIZE;
+    let num_pages = ((last_addr - first_addr) as usize + PAGE_SIZE - 1) / PAGE_SIZE;
+
     for page in 0..num_pages {
         let physical_address = (PAGE_SIZE * page) as u64 + first_addr;
         manager
-            .map_memory(physical_address, physical_address)
+            .map_memory(
+                physical_address,
+                physical_address,
+                PageEntryFlags::default(),
+            )
             .map_err(|_| {
                 format!(
                     "Could not identity map physical address: {:#x}",
@@ -160,7 +166,7 @@ pub(super) fn set_up_address_space(
         let physical_address = ((PAGE_SIZE * page) as u64) + kernel_file_start_addr;
         let virtual_address = KERNEL_MAPPING_OFFSET + physical_address;
         manager
-            .map_memory(virtual_address, physical_address)
+            .map_memory(virtual_address, physical_address, PageEntryFlags::default())
             .map_err(|_| {
                 format!(
                     "Could not map kernel physical address: {} to higher half address: {}",
@@ -168,18 +174,15 @@ pub(super) fn set_up_address_space(
                 )
             })?;
     }
-    // map kernel stack to higher half
-    // add additional pages keep stack from overwriting kernel code in case of overflow
-    let kernel_stack_virtual_start_addr = (PAGE_SIZE * kernel_file_num_pages) as u64
-        + kernel_file_start_addr
-        + KERNEL_MAPPING_OFFSET
-        + 5 * PAGE_SIZE as u64;
+
+    // map kernel stack to higher half address
+    let kernel_stack_virtual_start_addr = KERNEL_STACK_MAPPING_OFFSET;
 
     for page in 0..kernel_stack_num_pages {
         let physical_address = ((page * PAGE_SIZE) as u64) + kernel_stack_start_addr;
         let virtual_address = kernel_stack_virtual_start_addr + (page * PAGE_SIZE) as u64;
         manager
-            .map_memory(virtual_address, physical_address)
+            .map_memory(virtual_address, physical_address, PageEntryFlags::default())
             .map_err(|_| {
                 format!(
                     "Could not map kernel stack physical address: {} to higher half address: {}",
@@ -189,12 +192,14 @@ pub(super) fn set_up_address_space(
     }
 
     // map boot info page to higher half right above stack
-    let kernel_boot_info_virtual_start_addr = VirtualAddress::from(
-        kernel_stack_virtual_start_addr + (kernel_stack_num_pages * PAGE_SIZE) as u64,
-    );
-
+    let kernel_boot_info_virtual_start_addr =
+        kernel_stack_virtual_start_addr + (kernel_stack_num_pages * PAGE_SIZE) as u64;
     manager
-        .map_memory(kernel_boot_info_virtual_start_addr, kernel_boot_info_addr)
+        .map_memory(
+            kernel_boot_info_virtual_start_addr,
+            kernel_boot_info_addr,
+            PageEntryFlags::default(),
+        )
         .map_err(|_| {
             format!(
                 "Could not map kernel boot info physical address: {} to higher half address: {}",
@@ -215,7 +220,7 @@ struct BootServiceWrapper<'a>(&'a BootServices);
 impl<'a> PageFrameAllocator<'a, String> for BootServiceWrapper<'a> {
     fn request_page(&mut self) -> Result<PhysicalAddress, String> {
         self.0
-            .allocate_pages(AnyPages, MemoryType::LOADER_DATA, 1)
+            .allocate_pages(AnyPages, LOADER_PAGING, 1)
             .map_err(|_| "Could not allocate page for page table manager.".to_string())
     }
 }

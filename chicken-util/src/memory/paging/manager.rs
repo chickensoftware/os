@@ -34,6 +34,7 @@ impl<'a, A: PageFrameAllocator<'a, E>, E> PageTableManager<A, E> {
         &mut self,
         virtual_memory: VirtualAddress,
         physical_memory: PhysicalAddress,
+        flags: PageEntryFlags
     ) -> Result<(), E> {
         let indexer = PageMapIndexer::new(virtual_memory);
         let page_map_level4 = self.page_map_level4;
@@ -49,10 +50,15 @@ impl<'a, A: PageFrameAllocator<'a, E>, E> PageTableManager<A, E> {
         let page_entry = &mut unsafe { &mut *page_map_level1 }.entries[indexer.p_i() as usize];
 
         page_entry.set_address(physical_memory);
-        page_entry.set_flags(PageEntryFlags::PRESENT | PageEntryFlags::READ_WRITE);
+        page_entry.set_flags(flags);
 
         Ok(())
     }
+
+    pub fn frame_allocator(&mut self) -> &mut A {
+        &mut self.page_frame_allocator
+    }
+
 
     fn get_or_create_next_table(
         &mut self,
