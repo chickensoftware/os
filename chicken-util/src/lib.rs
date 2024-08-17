@@ -1,11 +1,15 @@
 #![no_std]
 
+use crate::graphics::framebuffer::FrameBufferMetadata;
 use crate::memory::MemoryMap;
 
 pub mod memory;
+pub mod graphics;
+
 pub const PAGE_SIZE: usize = 4096;
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct BootInfo {
-    pub memory_map: MemoryMap
+    pub memory_map: MemoryMap,
+    pub framebuffer_metadata: FrameBufferMetadata,
 }

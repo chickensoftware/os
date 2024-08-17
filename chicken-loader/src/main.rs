@@ -24,6 +24,7 @@ use crate::memory::{
 
 mod file;
 mod memory;
+mod graphics;
 
 const KERNEL_FILE_NAME: &str = "kernel.elf";
 
@@ -137,11 +138,25 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     validate!(kernel_boot_info, stdout);
     let (kernel_boot_info_addr, mmap_descriptors) = kernel_boot_info.unwrap();
 
-    print!(
-        "boot: Setting up address space for higher half kernel",
+    // Exit boot services and handover control to kernel
+    println!(
+        "boot: Setting up address space and dropping boot services",
         stdout
     );
+    println!("boot: Chicken OS is hatching...", stdout);
+    print_chicken(stdout);
 
+    // switch to graphics mode
+    let fb_metadata = graphics::initialize_framebuffer(system_table.boot_services());
+    let stdout = system_table.stdout();
+
+    // text mode may still be enabled if operation failed
+    validate!(fb_metadata, stdout);
+    let fb_metadata = fb_metadata.unwrap();
+    let fb_start_addr = fb_metadata.base;
+    let fb_num_pages = (fb_start_addr as usize + fb_metadata.size + PAGE_SIZE - 1) / PAGE_SIZE;
+
+    // note: also mapping framebuffer in bootloader for testing reasons => will be removed later
     // setup paging + virtual address space for higher half kernel
     let address_space_info = set_up_address_space(
         &mut system_table,
@@ -151,33 +166,28 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
             kernel_stack_start_addr,
             kernel_stack_num_pages,
             kernel_boot_info_addr,
+            fb_start_addr,
+            fb_num_pages,
         },
     );
 
-    let stdout = system_table.stdout();
-
-    validate!(address_space_info, stdout);
+    // note: validate is no longer available after switching to graphics mode
     let (pml4_addr, kernel_stack_addr, kernel_boot_info_addr) = address_space_info.unwrap();
-
-    // Exit boot services and handover control to kernel
-    println!(
-        "boot: Dropping boot services. Chicken OS is hatching...",
-        stdout
-    );
-    print_chicken(stdout);
-
     let (_runtime, mmap) = drop_boot_services(system_table, mmap_descriptors);
 
     // switch to custom paging implementation and update stack pointer
     unsafe {
-        asm!("mov cr3, {0}", in(reg) pml4_addr);
+        asm!("mov cr3, {}", in(reg) pml4_addr);
     }
 
     let boot_info = unsafe { &mut *(kernel_boot_info_addr as *mut BootInfo) };
     boot_info.memory_map = mmap;
+    boot_info.framebuffer_metadata = fb_metadata;
+
     unsafe {
-        asm!("mov rsp, {0}", in(reg) kernel_stack_addr);
+        asm!("mov rsp, {}", in(reg) kernel_stack_addr);
     }
+
     // call kernel entry
     _start(boot_info);
 }

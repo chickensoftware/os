@@ -7,8 +7,8 @@ use core::{
 
 use chicken_util::{
     memory::{
-        paging::{manager::PageFrameAllocator, KERNEL_STACK_MAPPING_OFFSET},
-        MemoryMap, MemoryType, PhysicalAddress,
+        MemoryMap,
+        MemoryType, paging::{KERNEL_STACK_MAPPING_OFFSET, manager::PageFrameAllocator}, PhysicalAddress,
     },
     PAGE_SIZE,
 };

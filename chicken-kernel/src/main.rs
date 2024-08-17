@@ -3,8 +3,10 @@
 
 use core::arch::asm;
 use core::panic::PanicInfo;
-
+use qemu_print::qemu_println;
 use chicken_util::BootInfo;
+use chicken_util::graphics::Color;
+use crate::video::framebuffer::RawFrameBuffer;
 
 mod base;
 mod scheduling;
@@ -13,17 +15,21 @@ mod memory;
 
 #[no_mangle]
 pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
-    video::setup();
-    base::setup();
-    memory::setup(boot_info);
+    let boot_info = *boot_info;
 
-    println!("It did not crash.");
+    memory::setup(boot_info);
+    video::setup(boot_info);
+    base::setup();
+
+    RawFrameBuffer::from(boot_info.framebuffer_metadata).fill(Color::yellow());
+
+    qemu_println!("It did not crash.");
     hlt_loop();
 }
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    println!("panic: {}", info);
+    qemu_println!("panic: {}", info);
     hlt_loop();
 }
 

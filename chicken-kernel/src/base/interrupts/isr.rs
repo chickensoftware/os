@@ -1,3 +1,5 @@
+use core::arch::asm;
+
 use crate::base::interrupts::CpuState;
 use crate::base::interrupts::idt::InterruptDescriptorTable;
 use crate::println;
@@ -27,6 +29,10 @@ pub fn interrupt_dispatch(state_ptr: *const CpuState) -> *const CpuState {
         // page fault
         14 => {
             println!("exception: PAGE FAULT. Error code: {:?}", error_code::PageFaultErrorCode::from_bits_truncate(state.error_code as u32));
+            // get register containing address of faulting page
+            let cr2: u64;
+            unsafe { asm!("mov {}, cr2", out(reg) cr2); }
+            println!("Faulting page address: {:#x}", cr2);
         }
         _ => {
             println!("Interrupt handler has not been set up. vector: {:#x}, error code (if set): {:?}", state.vector_number, error_code::ErrorCode::from_bits_truncate(state.error_code as u32))

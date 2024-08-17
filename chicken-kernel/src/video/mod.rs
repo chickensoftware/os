@@ -2,7 +2,10 @@
 
 use qemu_print::qemu_print;
 
+use chicken_util::BootInfo;
 use crate::base::interrupts::without_interrupts;
+
+pub(super) mod framebuffer;
 
 const CHICKEN_OS: &str = r#"
    _____ _     _      _               ____   _____
@@ -31,7 +34,8 @@ pub fn _print(args: core::fmt::Arguments) {
     })
 }
 
-pub(super) fn setup() {
+pub(super) fn setup(_boot_info: BootInfo) {
     // todo: initialize global writer
+
     println!("{}", CHICKEN_OS);
 }

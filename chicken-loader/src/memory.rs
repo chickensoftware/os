@@ -5,22 +5,23 @@ use alloc::{
 };
 use core::ptr;
 
-use chicken_util::{
-    memory::{
-        paging::{
-            manager::{PageFrameAllocator, PageTableManager},
-            PageEntryFlags, PageTable, KERNEL_STACK_MAPPING_OFFSET,
-        },
-        PhysicalAddress, VirtualAddress,
-    },
-    PAGE_SIZE,
-};
 use uefi::{
     prelude::BootServices,
     table::{
         boot::{AllocateType::AnyPages, MemoryType},
         Boot, SystemTable,
     },
+};
+
+use chicken_util::{
+    memory::{
+        paging::{
+            KERNEL_STACK_MAPPING_OFFSET,
+            manager::{PageFrameAllocator, PageTableManager}, PageEntryFlags, PageTable,
+        },
+        PhysicalAddress, VirtualAddress,
+    },
+    PAGE_SIZE,
 };
 
 use crate::{ChickenMemoryDescriptor, KERNEL_MAPPING_OFFSET, KERNEL_STACK_SIZE};
@@ -37,6 +38,8 @@ pub(super) struct KernelInfo {
     pub(super) kernel_stack_start_addr: PhysicalAddress,
     pub(super) kernel_stack_num_pages: usize,
     pub(super) kernel_boot_info_addr: PhysicalAddress,
+    pub(super) fb_start_addr: PhysicalAddress,
+    pub(super) fb_num_pages: usize,
 }
 
 /// Allocate pages for kernel stack. Returns physical address of allocated stack and amount of pages allocated.
@@ -89,6 +92,8 @@ pub(super) fn set_up_address_space(
         kernel_stack_start_addr,
         kernel_stack_num_pages,
         kernel_boot_info_addr,
+        fb_start_addr,
+        fb_num_pages
     } = kernel_info;
 
     let pml4_addr = system_table
@@ -206,6 +211,20 @@ pub(super) fn set_up_address_space(
                 kernel_boot_info_addr, kernel_boot_info_virtual_start_addr
             )
         })?;
+
+    // identity map framebuffer
+    let fb_base = fb_start_addr;
+    for page in 0..fb_num_pages {
+        let physical_address = fb_base + (page * PAGE_SIZE) as u64;
+        manager
+            .map_memory(physical_address, physical_address, PageEntryFlags::default_nx())
+            .map_err(|_| {
+                format!(
+                    "Could not identity map framebuffer at address: {:#x}",
+                    physical_address
+                )
+            })?;
+    }
 
     Ok((
         pml4_addr,

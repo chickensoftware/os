@@ -55,7 +55,8 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [ ] Heap Allocator
 
 ### Video Output
-- [ ] Framebuffer
+- [x] Raw Framebuffer
+- [ ] Full-fetched Framebuffer
 - [ ] Text & Fonts
 - [ ] Global Writer
 
