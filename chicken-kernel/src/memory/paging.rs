@@ -18,7 +18,7 @@ use crate::{
     memory::pmm::{BitMapAllocator, PageFrameAllocatorError},
 };
 
-const VIRTUAL_PHYSICAL_BASE: u64 = 0;
+const VIRTUAL_PHYSICAL_BASE: u64 = 0xFFFF_8000_0000_0000;
 const VIRTUAL_DATA_BASE: u64 = 0xFFFF_FFFF_7000_0000;
 /// Function to set up custom paging scheme. Returns virtual address of page manager level 4 table.
 // New setup:
