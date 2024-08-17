@@ -10,6 +10,8 @@ TARGET_DIR_KERNEL_RELEASE = target/x86_64-unknown-none-chicken/release
 
 EFI_FILE = chicken-loader.efi
 KERNEL_FILE = chicken-kernel.elf
+FONT_FILE = ext-light32.psf # currently light16.psf or ext-light32.psf
+FONT_DIR = $(UTIL_DIR)/fonts
 
 BUILD_DIR = build
 ESP_DIR = $(BUILD_DIR)/esp
@@ -70,6 +72,8 @@ run: all
 	@cp $(TARGET_DIR_BOOTLOADER)/$(EFI_FILE) $(BOOT_DIR)/bootx64.efi
 	@echo "Copying kernel file to boot directory..."
 	@cp $(TARGET_DIR_KERNEL)/$(KERNEL_FILE) $(ESP_DIR)/kernel.elf
+	@echo "Copying font file to boot directory..."
+	@cp $(FONT_DIR)/$(FONT_FILE) $(ESP_DIR)/font.psf
 	@echo "Running QEMU..."
 	@qemu-system-x86_64 -enable-kvm \
 		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
@@ -92,6 +96,8 @@ usb: all
 	@sudo cp $(TARGET_DIR_BOOTLOADER)/$(EFI_FILE) /mnt/efi/boot/bootx64.efi
 	@echo "Copying kernel file to USB drive..."
 	@sudo cp $(TARGET_DIR_KERNEL)/$(KERNEL_FILE) /mnt/kernel.elf
+	@echo "Copying font file to boot directory..."
+	@sudo cp $(FONT_DIR)/$(FONT_FILE) /mnt/font.psf
 	@echo "Unmounting USB drive..."
 	@sudo umount /mnt
 	@echo "USB drive is ready to boot."

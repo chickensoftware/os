@@ -58,8 +58,8 @@ make usb USB_DEVICE=/dev/<device> release=true
 ### Video Output
 - [x] Raw Framebuffer
 - [ ] Full-fetched Framebuffer
-- [ ] Text & Fonts
-- [ ] Global Writer
+- [x] Text & Fonts
+- [x] Global Writer
 
 ### Scheduling
 - [ ] Scheduler

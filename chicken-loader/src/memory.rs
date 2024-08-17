@@ -5,23 +5,22 @@ use alloc::{
 };
 use core::ptr;
 
+use chicken_util::{
+    memory::{
+        paging::{
+            manager::{PageFrameAllocator, PageTableManager},
+            PageEntryFlags, PageTable, KERNEL_STACK_MAPPING_OFFSET,
+        },
+        PhysicalAddress, VirtualAddress,
+    },
+    PAGE_SIZE,
+};
 use uefi::{
     prelude::BootServices,
     table::{
         boot::{AllocateType::AnyPages, MemoryType},
         Boot, SystemTable,
     },
-};
-
-use chicken_util::{
-    memory::{
-        paging::{
-            KERNEL_STACK_MAPPING_OFFSET,
-            manager::{PageFrameAllocator, PageTableManager}, PageEntryFlags, PageTable,
-        },
-        PhysicalAddress, VirtualAddress,
-    },
-    PAGE_SIZE,
 };
 
 use crate::{ChickenMemoryDescriptor, KERNEL_MAPPING_OFFSET, KERNEL_STACK_SIZE};
@@ -118,6 +117,7 @@ pub(super) fn set_up_address_space(
         .boot_services()
         .memory_map(MemoryType::LOADER_DATA)
         .map_err(|_| "Could not get memory map.".to_string())?;
+
     let first_addr = mmap
         .entries()
         .filter(|desc| {

@@ -8,6 +8,4 @@ pub(super) fn setup() {
     gdt::initialize();
     idt::initialize();
     interrupts::enable();
-
 }
-

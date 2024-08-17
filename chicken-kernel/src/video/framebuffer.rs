@@ -1,19 +1,29 @@
-use core::ptr::write_volatile;
+use core::{fmt::Debug, ptr::write_volatile};
 
-use chicken_util::graphics::Color;
-use chicken_util::graphics::framebuffer::{BPP, FrameBufferMetadata};
+use chicken_util::graphics::{
+    font::Font,
+    framebuffer::{FrameBufferMetadata, BPP},
+    Color,
+};
+
+use crate::video::VideoError;
 
 /// Directly accesses video memory in order to display graphics
 #[derive(Clone, Debug)]
 pub(crate) struct RawFrameBuffer {
-    meta_data: FrameBufferMetadata,
+    pub(in crate::video) meta_data: FrameBufferMetadata,
 }
 
 impl RawFrameBuffer {
     /// Draws a pixel onto the screen at coordinates x,y and with the specified color. Returns, whether the action succeeds or the coordinates are invalid.
-    pub(crate) fn draw_pixel(&self, x: usize, y: usize, color: Color) -> bool {
+    pub(in crate::video) fn draw_pixel(
+        &self,
+        x: usize,
+        y: usize,
+        color: Color,
+    ) -> Result<(), VideoError> {
         if !self.in_bounds(x, y) {
-            return false;
+            return Err(VideoError::CoordinatesOutOfBounds(x, y));
         }
 
         let pitch = self.meta_data.stride * BPP;
@@ -32,15 +42,55 @@ impl RawFrameBuffer {
             }
         }
 
-        true
+        Ok(())
     }
     /// Fills entire display with certain color
-    pub(crate) fn fill(&self, color: Color) {
+    pub(in crate::video) fn fill(&self, color: Color) {
         for x in 0..self.meta_data.width {
             for y in 0..self.meta_data.height {
-                self.draw_pixel(x, y, color);
+                self.draw_pixel(x, y, color).unwrap();
             }
         }
+    }
+}
+
+impl RawFrameBuffer {
+    pub(in crate::video) fn draw_char(
+        &self,
+        character: char,
+        x_offset: usize,
+        y_offset: usize,
+        foreground_color: Color,
+        background_color: Color,
+        font: Font,
+    ) -> Result<(), VideoError> {
+        if character as usize >= font.glyphs().len() {
+            return Err(VideoError::UnsupportedCharacter);
+        }
+
+        let character_offset = character as usize * font.glyph_bytes();
+        let character_ptr = unsafe { font.glyph_buffer_address.add(character_offset) };
+
+        let glyph_height = font.glyph_height();
+        let glyph_width = font.glyph_width();
+
+        for y in 0..glyph_height {
+            for x in 0..glyph_width {
+                let byte_index = (y * glyph_width + x) / 8;
+                let bit_index = 7 - ((y * glyph_width + x) % 8);
+
+                let byte = unsafe { *character_ptr.add(byte_index) };
+                let color = if (byte & (1 << bit_index)) != 0 {
+                    foreground_color
+                } else {
+                    background_color
+                };
+
+                self.draw_pixel(x + x_offset, y + y_offset, color)?;
+            }
+        }
+
+        Ok(())
     }
 }
 

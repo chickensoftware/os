@@ -21,9 +21,10 @@ pub(super) fn initialize() {
         offset: gdt as *const _ as u64,
     };
 
-    unsafe { load_gdt(&gdt_desc as *const GdtDescriptor); }
+    unsafe {
+        load_gdt(&gdt_desc as *const GdtDescriptor);
+    }
 }
-
 
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone)]
@@ -57,18 +58,48 @@ impl SegmentDescriptor {
     }
 
     fn kernel_code() -> Self {
-        SegmentDescriptor::new(0, 0xFFFFF, AccessByte::PRESENT | AccessByte::DESCRIPTOR_TYPE | AccessByte::EXECUTABLE | AccessByte::READABLE_WRITEABLE, SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY)
+        SegmentDescriptor::new(
+            0,
+            0xFFFFF,
+            AccessByte::PRESENT
+                | AccessByte::DESCRIPTOR_TYPE
+                | AccessByte::EXECUTABLE
+                | AccessByte::READABLE_WRITEABLE,
+            SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
+        )
     }
     fn kernel_data() -> Self {
-        SegmentDescriptor::new(0, 0xFFFFF, AccessByte::PRESENT | AccessByte::DESCRIPTOR_TYPE | AccessByte::READABLE_WRITEABLE, SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY)
+        SegmentDescriptor::new(
+            0,
+            0xFFFFF,
+            AccessByte::PRESENT | AccessByte::DESCRIPTOR_TYPE | AccessByte::READABLE_WRITEABLE,
+            SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
+        )
     }
 
     fn user_code() -> Self {
-        SegmentDescriptor::new(0, 0xFFFFF, AccessByte::PRESENT | AccessByte::DPL | AccessByte::DESCRIPTOR_TYPE | AccessByte::EXECUTABLE | AccessByte::CONFORMING_DIRECTION, SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY)
+        SegmentDescriptor::new(
+            0,
+            0xFFFFF,
+            AccessByte::PRESENT
+                | AccessByte::DPL
+                | AccessByte::DESCRIPTOR_TYPE
+                | AccessByte::EXECUTABLE
+                | AccessByte::CONFORMING_DIRECTION,
+            SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
+        )
     }
 
     fn user_data() -> Self {
-        SegmentDescriptor::new(0, 0xFFFFF, AccessByte::PRESENT | AccessByte::DPL | AccessByte::DESCRIPTOR_TYPE | AccessByte::CONFORMING_DIRECTION, SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY)
+        SegmentDescriptor::new(
+            0,
+            0xFFFFF,
+            AccessByte::PRESENT
+                | AccessByte::DPL
+                | AccessByte::DESCRIPTOR_TYPE
+                | AccessByte::CONFORMING_DIRECTION,
+            SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
+        )
     }
 }
 

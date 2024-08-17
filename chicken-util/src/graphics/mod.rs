@@ -1,5 +1,6 @@
 use core::fmt::Debug;
 
+pub mod font;
 pub mod framebuffer;
 
 #[derive(Copy, Clone, Debug, Default)]
@@ -12,7 +13,11 @@ macro_rules! color {
     ($color:ident, $red:expr, $green:expr, $blue:expr) => {
         impl Color {
             pub const fn $color() -> Color {
-                Color {red: $red, green: $green, blue: $blue}
+                Color {
+                    red: $red,
+                    green: $green,
+                    blue: $blue,
+                }
             }
         }
     };
@@ -25,4 +30,4 @@ color!(grey, 0xC0, 0xC0, 0xC0);
 color!(dark_grey, 0x1D, 0x1D, 0x1D);
 color!(black, 0x00, 0x00, 0x00);
 color!(white, 0xFF, 0xFF, 0xFF);
-color!(yellow, 0xFF,0xFF,0x00);
+color!(yellow, 0xFF, 0xFF, 0x00);

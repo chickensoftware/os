@@ -5,13 +5,17 @@ use core::{
     ptr,
 };
 
-use chicken_util::{BootInfo, memory::{
-    MemoryType
-    , paging::{
-        KERNEL_MAPPING_OFFSET,
-        KERNEL_STACK_MAPPING_OFFSET, manager::{PageFrameAllocator, PageTableManager}, PageEntryFlags, PageTable,
-    }, PhysicalAddress,
-}, PAGE_SIZE};
+use chicken_util::{
+    graphics::font::Font,
+    memory::{
+        paging::{
+            manager::{PageFrameAllocator, PageTableManager},
+            PageEntryFlags, PageTable, KERNEL_MAPPING_OFFSET, KERNEL_STACK_MAPPING_OFFSET,
+        },
+        MemoryDescriptor, MemoryMap, MemoryType, PhysicalAddress,
+    },
+    BootInfo, PAGE_SIZE,
+};
 
 use crate::{
     base::msr::Efer,
@@ -20,7 +24,7 @@ use crate::{
 
 const VIRTUAL_PHYSICAL_BASE: u64 = 0xFFFF_8000_0000_0000;
 const VIRTUAL_DATA_BASE: u64 = 0xFFFF_FFFF_7000_0000;
-/// Function to set up custom paging scheme. Returns virtual address of page manager level 4 table.
+/// Function to set up custom paging scheme. Returns virtual address of page manager level 4 table. Also returns boot info with updated usable virtual addresses
 // New setup:
 // 0xffff'ffff'ffff'ffff   --+ <- End of virtual address space
 //                           |
@@ -45,9 +49,9 @@ const VIRTUAL_DATA_BASE: u64 = 0xFFFF_FFFF_7000_0000;
 // 0x0000'0000'0000'0000   --+ <- Start of virtual address space
 pub(super) fn setup(
     mut frame_allocator: BitMapAllocator,
-    boot_info: BootInfo,
-) -> Result<PhysicalAddress, PagingError> {
-    let memory_map = boot_info.memory_map;
+    old_boot_info: BootInfo,
+) -> Result<(PhysicalAddress, BootInfo), PagingError> {
+    let memory_map = old_boot_info.memory_map;
     // Allocate and clear a new PML4 page
     let pml4_addr = frame_allocator.request_page().map_err(PagingError::from)?;
     if (pml4_addr as usize) % align_of::<PageTable>() != 0 {
@@ -108,14 +112,16 @@ pub(super) fn setup(
         Ok(())
     })?;
 
-    let framebuffer_metadata = boot_info.framebuffer_metadata;
+    let framebuffer_metadata = old_boot_info.framebuffer_metadata;
     // identity map framebuffer
     let fb_base_address = framebuffer_metadata.base;
     let fb_num_pages = (framebuffer_metadata.size + PAGE_SIZE - 1) / PAGE_SIZE;
 
     for page in 0..fb_num_pages {
         let address = fb_base_address + (page * PAGE_SIZE) as u64;
-        manager.map_memory(address, address, PageEntryFlags::default_nx()).map_err(PagingError::from)?;
+        manager
+            .map_memory(address, address, PageEntryFlags::default_nx())
+            .map_err(PagingError::from)?;
     }
 
     // free reserved LoaderPageTables frames
@@ -135,7 +141,23 @@ pub(super) fn setup(
         efer.write();
     }
 
-    Ok(pml4_addr)
+    let old_font = old_boot_info.font;
+    // update boot info
+    let boot_info = BootInfo {
+        memory_map: MemoryMap {
+            descriptors: (memory_map.descriptors as u64 - smallest_kernel_data_addr
+                + VIRTUAL_DATA_BASE) as *mut MemoryDescriptor,
+            ..memory_map
+        },
+        font: Font {
+            glyph_buffer_address: (old_font.glyph_buffer_address as u64 - smallest_kernel_data_addr
+                + VIRTUAL_DATA_BASE) as *const u8,
+            ..old_font
+        },
+        ..old_boot_info
+    };
+
+    Ok((pml4_addr, boot_info))
 }
 
 /// Note: technically this only switches to a custom page table, since paging has already been enabled by uefi.

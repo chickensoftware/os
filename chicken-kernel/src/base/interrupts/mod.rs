@@ -1,5 +1,4 @@
-use core::arch::asm;
-use core::fmt::Debug;
+use core::{arch::asm, fmt::Debug};
 
 use bitflags::bitflags;
 

@@ -1,11 +1,25 @@
 // note: for now just using qemu_println, will later be changed to custom implementation.
 
-use qemu_print::qemu_print;
+use core::{
+    error::Error,
+    fmt::{Debug, Display, Formatter},
+};
 
-use chicken_util::BootInfo;
-use crate::base::interrupts::without_interrupts;
+use chicken_util::{graphics::Color, BootInfo};
+
+use crate::{
+    println,
+    video::{
+        framebuffer::RawFrameBuffer,
+        text::{Writer, WRITER},
+    },
+};
 
 pub(super) mod framebuffer;
+pub mod text;
+
+const FOREGROUND_COLOR: Color = Color::white();
+const BACKGROUND_COLOR: Color = Color::black();
 
 const CHICKEN_OS: &str = r#"
    _____ _     _      _               ____   _____
@@ -16,26 +30,47 @@ const CHICKEN_OS: &str = r#"
   \_____|_| |_|_|\___|_|\_\___|_| |_|\____/|_____/
                                                    "#;
 
-#[macro_export]
-macro_rules! print {
-    ($($arg:tt)*) => ($crate::video::_print(format_args!($($arg)*)));
-}
+pub(super) fn setup(boot_info: BootInfo) {
+    // initialize framebuffer
+    let framebuffer = RawFrameBuffer::from(boot_info.framebuffer_metadata);
+    framebuffer.fill(Color::black());
 
-#[macro_export]
-macro_rules! println {
-    () => ($crate::print!("\n"));
-    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
-}
-
-#[doc(hidden)]
-pub fn _print(args: core::fmt::Arguments) {
-    without_interrupts(|| {
-        qemu_print!("{}", args);
-    })
-}
-
-pub(super) fn setup(_boot_info: BootInfo) {
-    // todo: initialize global writer
+    // initialize global writer
+    WRITER.lock().get_or_init(|| {
+        Writer::new(
+            boot_info.font,
+            framebuffer,
+            FOREGROUND_COLOR,
+            BACKGROUND_COLOR,
+        )
+    });
 
     println!("{}", CHICKEN_OS);
 }
+
+#[derive(Copy, Clone)]
+enum VideoError {
+    CoordinatesOutOfBounds(usize, usize),
+    UnsupportedCharacter,
+}
+
+impl Debug for VideoError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            VideoError::CoordinatesOutOfBounds(x, y) => write!(
+                f,
+                "Video Error: Coordinates out of bounds: x: {}, y: {}.",
+                x, y
+            ),
+            VideoError::UnsupportedCharacter => write!(f, "Video Error: Unsupported character."),
+        }
+    }
+}
+
+impl Display for VideoError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl Error for VideoError {}

@@ -6,27 +6,29 @@ extern crate alloc;
 use alloc::{format, vec::Vec};
 use core::{arch::asm, fmt::Write, mem, panic::PanicInfo};
 
+use chicken_util::{
+    graphics::font::Font, memory::paging::KERNEL_MAPPING_OFFSET, BootInfo, PAGE_SIZE,
+};
 use log::error;
 use qemu_print::qemu_println;
 use uefi::{
     entry,
-    Handle,
     proto::console::text::{Color, Output},
-    Status, table::{Boot, boot::MemoryType, Runtime, SystemTable},
+    table::{boot::MemoryType, Boot, Runtime, SystemTable},
+    Handle, Status,
 };
 
-use chicken_util::{BootInfo, memory::paging::KERNEL_MAPPING_OFFSET, PAGE_SIZE};
-
 use crate::memory::{
-    allocate_boot_info, allocate_kernel_stack, KERNEL_CODE, KERNEL_DATA, KERNEL_STACK,
-    KernelInfo, LOADER_PAGING, set_up_address_space,
+    allocate_boot_info, allocate_kernel_stack, set_up_address_space, KernelInfo, KERNEL_CODE,
+    KERNEL_DATA, KERNEL_STACK, LOADER_PAGING,
 };
 
 mod file;
-mod memory;
 mod graphics;
+mod memory;
 
 const KERNEL_FILE_NAME: &str = "kernel.elf";
+const FONT_FILE_NAME: &str = "font.psf";
 
 const KERNEL_STACK_SIZE: usize = 1024 * 1024; // 1 MB
 
@@ -119,9 +121,10 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
             "boot: Allocating memory for kernel stack ({} MB)",
             KERNEL_STACK_SIZE / (1024 * 1024)
         )
-            .as_str(),
+        .as_str(),
         stdout
     );
+
     let kernel_stack_info = allocate_kernel_stack(system_table.boot_services());
     let stdout = system_table.stdout();
 
@@ -132,11 +135,20 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         "boot: Allocating memory for kernel boot information",
         stdout
     );
+
     let kernel_boot_info = allocate_boot_info(system_table.boot_services());
     let stdout = system_table.stdout();
 
     validate!(kernel_boot_info, stdout);
     let (kernel_boot_info_addr, mmap_descriptors) = kernel_boot_info.unwrap();
+
+    print!("boot: Allocating memory for framebuffer font", stdout);
+
+    let font_info = graphics::load_font(image_handle, system_table.boot_services());
+    let stdout = system_table.stdout();
+
+    validate!(font_info, stdout);
+    let (font_header, font_buffer_addr, font_buffer_size) = font_info.unwrap();
 
     // Exit boot services and handover control to kernel
     println!(
@@ -153,8 +165,6 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     // text mode may still be enabled if operation failed
     validate!(fb_metadata, stdout);
     let fb_metadata = fb_metadata.unwrap();
-    let fb_start_addr = fb_metadata.base;
-    let fb_num_pages = (fb_start_addr as usize + fb_metadata.size + PAGE_SIZE - 1) / PAGE_SIZE;
 
     // setup paging + virtual address space for higher half kernel
     let address_space_info = set_up_address_space(
@@ -180,6 +190,11 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     let boot_info = unsafe { &mut *(kernel_boot_info_addr as *mut BootInfo) };
     boot_info.memory_map = mmap;
     boot_info.framebuffer_metadata = fb_metadata;
+    boot_info.font = Font {
+        header: font_header,
+        glyph_buffer_address: font_buffer_addr as *const u8,
+        glyph_buffer_size: font_buffer_size,
+    };
 
     unsafe {
         asm!("mov rsp, {}", in(reg) kernel_stack_addr);

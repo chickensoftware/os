@@ -39,7 +39,8 @@ pub(super) fn load_elf(
     data: Vec<u8>,
     boot_services: &BootServices,
 ) -> Result<(VirtualAddress, PhysicalAddress, usize), String> {
-    let elf = Elf::parse(data.as_slice()).map_err(|_| "Unable to parse file to elf!".to_string())?;
+    let elf =
+        Elf::parse(data.as_slice()).map_err(|_| "Unable to parse file to elf!".to_string())?;
 
     let mut dest_start = u64::MAX;
     let mut dest_end = 0;

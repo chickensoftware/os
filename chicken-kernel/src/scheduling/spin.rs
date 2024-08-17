@@ -1,7 +1,11 @@
-use core::cell::UnsafeCell;
-use core::ops::{Deref, DerefMut};
-use core::sync::atomic::AtomicBool;
-use core::sync::atomic::Ordering::{Acquire, Release};
+use core::{
+    cell::UnsafeCell,
+    ops::{Deref, DerefMut},
+    sync::atomic::{
+        AtomicBool,
+        Ordering::{Acquire, Release},
+    },
+};
 
 pub(crate) struct SpinLock<T> {
     locked: AtomicBool,

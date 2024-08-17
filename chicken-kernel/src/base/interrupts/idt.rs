@@ -1,7 +1,6 @@
 use core::cell::OnceCell;
 
-use crate::base::gdt::CS;
-use crate::scheduling::spin::SpinLock;
+use crate::{base::gdt::CS, scheduling::spin::SpinLock};
 
 static IDT: SpinLock<OnceCell<InterruptDescriptorTable>> = SpinLock::new(OnceCell::new());
 
@@ -18,7 +17,9 @@ pub(in crate::base) fn initialize() {
         offset: idt as *const _ as u64,
     };
 
-    unsafe { load_idt(&idt_desc as *const IdtDescriptor); }
+    unsafe {
+        load_idt(&idt_desc as *const IdtDescriptor);
+    }
 }
 
 #[repr(align(16))]
@@ -30,8 +31,19 @@ impl InterruptDescriptorTable {
         Self([GateDescriptor::default(); 256])
     }
 
-    pub(in crate::base::interrupts) fn set_handler(&mut self, vector: u8, handler_address: u64, ist: u8, dpl: u8) {
-        self.0[vector as usize] = GateDescriptor::new(handler_address, CS, ist, GateFlags::new(GateType::TrapGate, dpl, true));
+    pub(in crate::base::interrupts) fn set_handler(
+        &mut self,
+        vector: u8,
+        handler_address: u64,
+        ist: u8,
+        dpl: u8,
+    ) {
+        self.0[vector as usize] = GateDescriptor::new(
+            handler_address,
+            CS,
+            ist,
+            GateFlags::new(GateType::TrapGate, dpl, true),
+        );
     }
 }
 

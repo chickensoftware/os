@@ -1,5 +1,7 @@
-use core::fmt;
-use core::fmt::{Debug, Formatter};
+use core::{
+    fmt,
+    fmt::{Debug, Formatter},
+};
 
 pub const BPP: usize = 4; // bytes per pixel = pixel_stride
 
@@ -10,9 +12,8 @@ pub struct FrameBufferMetadata {
     pub width: usize,
     pub height: usize,
     pub stride: usize, // pixels per scanline
-    pub is_rgb: bool, // RGB | BGR => for now only supports these pixel formats
+    pub is_rgb: bool,  // RGB | BGR => for now only supports these pixel formats
 }
-
 
 impl Debug for FrameBufferMetadata {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
@@ -22,4 +23,3 @@ impl Debug for FrameBufferMetadata {
         ))
     }
 }
-
