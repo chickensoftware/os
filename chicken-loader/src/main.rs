@@ -100,7 +100,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     // allocate pages and load kernel file data into memory
     print!("boot: Loading kernel image into memory", stdout);
-    let kernel_elf = file::load_elf(file.as_slice(), system_table.boot_services());
+    let kernel_elf = file::load_elf(file, system_table.boot_services());
     let stdout = system_table.stdout();
 
     validate!(kernel_elf, stdout);
@@ -156,7 +156,6 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     let fb_start_addr = fb_metadata.base;
     let fb_num_pages = (fb_start_addr as usize + fb_metadata.size + PAGE_SIZE - 1) / PAGE_SIZE;
 
-    // note: also mapping framebuffer in bootloader for testing reasons => will be removed later
     // setup paging + virtual address space for higher half kernel
     let address_space_info = set_up_address_space(
         &mut system_table,
@@ -166,8 +165,6 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
             kernel_stack_start_addr,
             kernel_stack_num_pages,
             kernel_boot_info_addr,
-            fb_start_addr,
-            fb_num_pages,
         },
     );
 
