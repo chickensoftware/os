@@ -49,7 +49,7 @@ const VIRTUAL_DATA_BASE: u64 = 0xFFFF_FFFF_7000_0000;
 // 0x0000'0000'0000'0000   --+ <- Start of virtual address space
 pub(super) fn setup(
     mut frame_allocator: BitMapAllocator,
-    old_boot_info: BootInfo,
+    old_boot_info: &BootInfo,
 ) -> Result<(PhysicalAddress, BootInfo), PagingError> {
     let memory_map = old_boot_info.memory_map;
     // Allocate and clear a new PML4 page
@@ -154,7 +154,7 @@ pub(super) fn setup(
                 + VIRTUAL_DATA_BASE) as *const u8,
             ..old_font
         },
-        ..old_boot_info
+        ..*old_boot_info
     };
 
     Ok((pml4_addr, boot_info))

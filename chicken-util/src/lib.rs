@@ -9,7 +9,7 @@ pub mod graphics;
 
 pub const PAGE_SIZE: usize = 4096;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct BootInfo {
     pub memory_map: MemoryMap,
     pub framebuffer_metadata: FrameBufferMetadata,

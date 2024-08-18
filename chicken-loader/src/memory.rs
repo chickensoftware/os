@@ -4,7 +4,6 @@ use alloc::{
     vec::Vec,
 };
 use core::ptr;
-
 use chicken_util::{
     memory::{
         paging::{

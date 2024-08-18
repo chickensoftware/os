@@ -7,11 +7,7 @@ extern kernel_main ; rust main
 section .text
     global _start
     _start:
-      call kernel_main
-
-    .fin:
-      hlt
-      jmp .fin
+      jmp kernel_main
 
     ; additional assembly functions
 

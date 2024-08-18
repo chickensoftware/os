@@ -35,12 +35,13 @@ pub(super) fn get_file_data(
 }
 
 /// Allocates the file data in memory and returns entry point, file base address and number of pages
-pub(super) fn load_elf(
+pub(super) fn parse_elf(
     data: Vec<u8>,
     boot_services: &BootServices,
 ) -> Result<(VirtualAddress, PhysicalAddress, usize), String> {
+    let data = data.as_slice();
     let elf =
-        Elf::parse(data.as_slice()).map_err(|_| "Unable to parse file to elf!".to_string())?;
+        Elf::parse(data).map_err(|_| "Unable to parse file to elf!".to_string())?;
 
     let mut dest_start = u64::MAX;
     let mut dest_end = 0;

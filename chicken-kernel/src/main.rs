@@ -3,8 +3,9 @@
 
 use core::{arch::asm, panic::PanicInfo};
 
-use chicken_util::BootInfo;
 use qemu_print::qemu_println;
+
+use chicken_util::BootInfo;
 
 mod base;
 mod memory;
@@ -13,8 +14,10 @@ mod video;
 
 #[no_mangle]
 pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
-    let boot_info = memory::setup(*boot_info);
-    video::setup(boot_info);
+    qemu_println!("test");
+
+    let boot_info = memory::setup(boot_info);
+    video::setup(&boot_info);
     base::setup();
 
     qemu_println!("It did not crash.");

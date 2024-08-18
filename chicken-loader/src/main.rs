@@ -4,23 +4,24 @@
 
 extern crate alloc;
 use alloc::{format, vec::Vec};
-use core::{arch::asm, fmt::Write, mem, panic::PanicInfo};
+use core::{arch::asm, fmt::Write, panic::PanicInfo};
 
-use chicken_util::{
-    graphics::font::Font, memory::paging::KERNEL_MAPPING_OFFSET, BootInfo, PAGE_SIZE,
-};
 use log::error;
 use qemu_print::qemu_println;
 use uefi::{
     entry,
+    Handle,
     proto::console::text::{Color, Output},
-    table::{boot::MemoryType, Boot, Runtime, SystemTable},
-    Handle, Status,
+    Status, table::{Boot, boot::MemoryType, Runtime, SystemTable},
+};
+
+use chicken_util::{
+    BootInfo, graphics::font::Font, memory::paging::KERNEL_MAPPING_OFFSET, PAGE_SIZE,
 };
 
 use crate::memory::{
-    allocate_boot_info, allocate_kernel_stack, set_up_address_space, KernelInfo, KERNEL_CODE,
-    KERNEL_DATA, KERNEL_STACK, LOADER_PAGING,
+    allocate_boot_info, allocate_kernel_stack, KERNEL_CODE, KERNEL_DATA, KERNEL_STACK,
+    KernelInfo, LOADER_PAGING, set_up_address_space,
 };
 
 mod file;
@@ -60,7 +61,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     // allocate pages and load kernel file data into memory
     print!("boot: Loading kernel image into memory", stdout);
-    let kernel_elf = file::load_elf(file, system_table.boot_services());
+    let kernel_elf = file::parse_elf(file, system_table.boot_services());
     let stdout = system_table.stdout();
 
     validate!(kernel_elf, stdout);
@@ -70,16 +71,13 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         stdout
     );
 
-    // setup kernel start function
-    let _start: extern "sysv64" fn(&BootInfo) -> ! = unsafe { mem::transmute(kernel_entry_addr) };
-
     // allocate pages for kernel stack
     print!(
         format!(
             "boot: Allocating memory for kernel stack ({} MB)",
             KERNEL_STACK_SIZE / (1024 * 1024)
         )
-        .as_str(),
+            .as_str(),
         stdout
     );
 
@@ -137,14 +135,9 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     );
 
     // note: validate is no longer available after switching to graphics mode
-    let (pml4_addr, kernel_stack_addr, kernel_boot_info_addr) = address_space_info.unwrap();
+    let (pml4_addr, kernel_stack_addr, virtual_kernel_boot_info_addr) = address_space_info.unwrap();
+
     let (_runtime, mmap) = drop_boot_services(system_table, mmap_descriptors);
-
-    // switch to custom paging implementation and update stack pointer
-    unsafe {
-        asm!("mov cr3, {}", in(reg) pml4_addr);
-    }
-
     let boot_info = unsafe { &mut *(kernel_boot_info_addr as *mut BootInfo) };
     boot_info.memory_map = mmap;
     boot_info.framebuffer_metadata = fb_metadata;
@@ -153,14 +146,25 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         glyph_buffer_address: font_buffer_addr as *const u8,
         glyph_buffer_size: font_buffer_size,
     };
-
-    // note: boot info and other variables will be preserved in cpu registers instead of the stack due to optimizations
     unsafe {
-        asm!("mov rsp, {}", in(reg) kernel_stack_addr);
+        asm!(
+        // boot info address
+        "mov rdi, {0}",
+        // switch to custom paging
+        "mov cr3, {2}",
+        // set stack pointer to kernel stack top
+        "mov rsp, {1}",
+        // jump to kernel entry
+        "jmp {3}",
+        in(reg) virtual_kernel_boot_info_addr,
+        in(reg) kernel_stack_addr,
+        in(reg) pml4_addr,
+        in(reg) kernel_entry_addr
+        );
     }
 
-    // call kernel entry
-    _start(boot_info);
+    // should never happen, because kernel diverges
+    Status::ABORTED
 }
 
 type ChickenMemoryMap = chicken_util::memory::MemoryMap;

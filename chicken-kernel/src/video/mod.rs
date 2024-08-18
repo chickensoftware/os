@@ -30,7 +30,7 @@ const CHICKEN_OS: &str = r#"
   \_____|_| |_|_|\___|_|\_\___|_| |_|\____/|_____/
                                                    "#;
 
-pub(super) fn setup(boot_info: BootInfo) {
+pub(super) fn setup(boot_info: &BootInfo) {
     // initialize framebuffer
     let framebuffer = RawFrameBuffer::from(boot_info.framebuffer_metadata);
     framebuffer.fill(Color::black());
