@@ -32,48 +32,6 @@ const FONT_FILE_NAME: &str = "font.psf";
 
 const KERNEL_STACK_SIZE: usize = 1024 * 1024; // 1 MB
 
-macro_rules! println {
-    ($s:expr, $stdout:expr) => {
-        print!($s, $stdout);
-        println!($stdout);
-    };
-    ($s:expr, $stdout:expr, $color:expr) => {
-        $stdout
-            .set_color($color, Color::Black)
-            .expect("Standard Output Protocol Error: Could not set color.");
-        print!($s, $stdout);
-        println!($stdout);
-        $stdout
-            .set_color(Color::White, Color::Black)
-            .expect("Standard Output Protocol Error: Could not set color.");
-    };
-    ($stdout:expr) => {
-        $stdout.write_char('\n').expect(
-            "Standard Output Protocol Error: Could not write next line character to screen.",
-        );
-    };
-}
-
-macro_rules! print {
-    ($s:expr, $stdout:expr) => {
-        $stdout
-            .write_str($s)
-            .expect("Standard Output Protocol Error: Could not write text to screen.");
-    };
-}
-
-macro_rules! validate {
-    ($result:expr, $stdout:expr) => {
-        if let Err(error_message) = $result {
-            println!(" [error] ", $stdout, Color::Red);
-            println!(error_message.as_str(), $stdout);
-            return Status::PROTOCOL_ERROR;
-        }
-
-        println!(" [success] ", $stdout, Color::Green);
-    };
-}
-
 /// Entry point of uefi application (bootloader)
 #[entry]
 fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
@@ -196,6 +154,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         glyph_buffer_size: font_buffer_size,
     };
 
+    // note: boot info and other variables will be preserved in cpu registers instead of the stack due to optimizations
     unsafe {
         asm!("mov rsp, {}", in(reg) kernel_stack_addr);
     }
@@ -323,4 +282,50 @@ fn print_chicken(stdout: &mut Output) {
     println!(" \\_/_)", stdout);
     println!("   _|_", stdout);
     println!(stdout);
+}
+
+
+#[macro_export]
+macro_rules! println {
+    ($s:expr, $stdout:expr) => {
+        print!($s, $stdout);
+        println!($stdout);
+    };
+    ($s:expr, $stdout:expr, $color:expr) => {
+        $stdout
+            .set_color($color, Color::Black)
+            .expect("Standard Output Protocol Error: Could not set color.");
+        print!($s, $stdout);
+        println!($stdout);
+        $stdout
+            .set_color(Color::White, Color::Black)
+            .expect("Standard Output Protocol Error: Could not set color.");
+    };
+    ($stdout:expr) => {
+        $stdout.write_char('\n').expect(
+            "Standard Output Protocol Error: Could not write next line character to screen.",
+        );
+    };
+}
+
+#[macro_export]
+macro_rules! print {
+    ($s:expr, $stdout:expr) => {
+        $stdout
+            .write_str($s)
+            .expect("Standard Output Protocol Error: Could not write text to screen.");
+    };
+}
+
+#[macro_export]
+macro_rules! validate {
+    ($result:expr, $stdout:expr) => {
+        if let Err(error_message) = $result {
+            println!(" [error] ", $stdout, Color::Red);
+            println!(error_message.as_str(), $stdout);
+            return Status::PROTOCOL_ERROR;
+        }
+
+        println!(" [success] ", $stdout, Color::Green);
+    };
 }

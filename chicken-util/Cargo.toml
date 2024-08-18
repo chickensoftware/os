@@ -5,6 +5,3 @@ edition = "2021"
 
 [dependencies]
 bitflags = "2.6.0"
-
-[build-dependencies]
-cc = "1.1.11"
