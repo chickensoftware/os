@@ -1,19 +1,21 @@
 use alloc::{format, string::String};
 
+use uefi::{
+    Handle,
+    prelude::BootServices,
+    proto::console::gop::{GraphicsOutput, PixelFormat},
+};
+use uefi::table::boot::MemoryType;
+
 use chicken_util::{
     graphics::{
-        font::{PSF1Header, PSF2Header, PSFHeader, PSF1_MAGIC, PSF2_MAGIC},
+        font::{PSF1_MAGIC, PSF1Header, PSF2_MAGIC, PSF2Header, PSFHeader},
         framebuffer::FrameBufferMetadata,
     },
     memory::PhysicalAddress,
 };
-use uefi::{
-    prelude::BootServices,
-    proto::console::gop::{GraphicsOutput, PixelFormat},
-    Handle,
-};
 
-use crate::{file, memory::KERNEL_DATA, FONT_FILE_NAME};
+use crate::{file, FONT_FILE_NAME};
 
 /// Initialize framebuffer (GOP)
 pub(super) fn initialize_framebuffer(
@@ -77,7 +79,7 @@ pub(super) fn load_font(
         // allocate memory for entire font data
         let total_size = size_of::<PSF1Header>() + glyph_buffer_size;
         let font_address = bt
-            .allocate_pool(KERNEL_DATA, total_size)
+            .allocate_pool(MemoryType::LOADER_DATA, total_size)
             .map_err(|error| format!("Could not allocate pool for PSF1 font: {error}."))?
             .as_ptr() as u64;
 
@@ -122,7 +124,7 @@ pub(super) fn load_font(
             }
 
             let font_address = bt
-                .allocate_pool(KERNEL_DATA, total_size)
+                .allocate_pool(MemoryType::LOADER_DATA, total_size)
                 .map_err(|error| format!("Could not allocate pool for PSF2 font: {error}."))?
                 .as_ptr() as u64;
 

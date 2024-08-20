@@ -2,6 +2,7 @@ use core::fmt::{Debug, Display, Formatter};
 use core::slice;
 
 pub mod paging;
+pub mod pmm;
 pub type VirtualAddress = u64;
 pub type PhysicalAddress = u64;
 #[repr(C)]
@@ -69,6 +70,4 @@ pub enum MemoryType {
     KernelStack = 3,
     /// boot info, memory map
     KernelData = 4,
-    /// page tables set up by loader
-    LoaderPageTables = 5
 }

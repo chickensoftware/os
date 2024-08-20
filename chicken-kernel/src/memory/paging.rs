@@ -6,21 +6,19 @@ use core::{
 };
 
 use chicken_util::{
+    BootInfo,
     graphics::font::Font,
     memory::{
-        paging::{
-            manager::{PageFrameAllocator, PageTableManager},
-            PageEntryFlags, PageTable, KERNEL_MAPPING_OFFSET, KERNEL_STACK_MAPPING_OFFSET,
-        },
-        MemoryDescriptor, MemoryMap, MemoryType, PhysicalAddress,
-    },
-    BootInfo, PAGE_SIZE,
+        MemoryDescriptor,
+        MemoryMap, MemoryType, paging::{
+            KERNEL_MAPPING_OFFSET,
+            KERNEL_STACK_MAPPING_OFFSET, manager::PageTableManager, PageEntryFlags, PageTable,
+        }, PhysicalAddress,
+    }, PAGE_SIZE,
 };
+use chicken_util::memory::pmm::{PageFrameAllocator, PageFrameAllocatorError};
 
-use crate::{
-    base::msr::Efer,
-    memory::pmm::{BitMapAllocator, PageFrameAllocatorError},
-};
+use crate::base::msr::Efer;
 
 const VIRTUAL_PHYSICAL_BASE: u64 = 0xFFFF_8000_0000_0000;
 const VIRTUAL_DATA_BASE: u64 = 0xFFFF_FFFF_7000_0000;
@@ -48,7 +46,7 @@ const VIRTUAL_DATA_BASE: u64 = 0xFFFF_FFFF_7000_0000;
 //                           |
 // 0x0000'0000'0000'0000   --+ <- Start of virtual address space
 pub(super) fn setup(
-    mut frame_allocator: BitMapAllocator,
+    mut frame_allocator: PageFrameAllocator,
     old_boot_info: &BootInfo,
 ) -> Result<(PhysicalAddress, BootInfo), PagingError> {
     let memory_map = old_boot_info.memory_map;
@@ -60,7 +58,7 @@ pub(super) fn setup(
     let pml4_table = pml4_addr as *mut PageTable;
     unsafe { ptr::write_bytes(pml4_table, 0, 1) };
 
-    let mut manager: PageTableManager<BitMapAllocator, PageFrameAllocatorError> =
+    let mut manager: PageTableManager =
         PageTableManager::new(pml4_table, frame_allocator);
     let smallest_addr = |desc_type: MemoryType| {
         memory_map
@@ -76,7 +74,7 @@ pub(super) fn setup(
 
     memory_map.descriptors().iter().try_for_each(|desc| {
         let (virtual_base, physical_base, page_entry_flags) = match desc.r#type {
-            MemoryType::Available | MemoryType::LoaderPageTables => (
+            MemoryType::Available => (
                 VIRTUAL_PHYSICAL_BASE,
                 desc.phys_start,
                 PageEntryFlags::default_nx(),
@@ -123,17 +121,6 @@ pub(super) fn setup(
             .map_memory(address, address, PageEntryFlags::default_nx())
             .map_err(PagingError::from)?;
     }
-
-    // free reserved LoaderPageTables frames
-    let frame_allocator = manager.frame_allocator();
-    memory_map
-        .descriptors()
-        .iter()
-        .filter(|desc| desc.r#type == MemoryType::LoaderPageTables)
-        .try_for_each(|desc| {
-            frame_allocator.free_reserved_frames(desc.phys_start, desc.num_pages as usize)
-        })
-        .map_err(PagingError::from)?;
 
     // enable no-execute feature if available
     if let Some(mut efer) = Efer::read() {

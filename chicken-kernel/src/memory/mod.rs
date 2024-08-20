@@ -1,13 +1,11 @@
 use chicken_util::BootInfo;
-
-use crate::memory::pmm::BitMapAllocator;
+use chicken_util::memory::pmm::PageFrameAllocator;
 
 pub(in crate::memory) mod paging;
-pub(in crate::memory) mod pmm;
 
 /// Sets up memory management and returns Boot info with proper virtual address pointers
 pub(super) fn setup(boot_info: &BootInfo) -> BootInfo {
-    let pmm = BitMapAllocator::try_new(boot_info.memory_map).unwrap();
+    let pmm = unsafe { (boot_info.pmm_address as *const PageFrameAllocator).read() };
     let (pml4, boot_info) = paging::setup(pmm, boot_info).unwrap();
     paging::enable(pml4);
 

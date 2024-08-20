@@ -1,27 +1,20 @@
-use core::marker::PhantomData;
-
 use crate::memory::{PhysicalAddress, VirtualAddress};
 use crate::memory::paging::{PageEntryFlags, PageTable};
 use crate::memory::paging::index::PageMapIndexer;
-
-pub trait PageFrameAllocator<'a, E> {
-    fn request_page(&mut self) -> Result<PhysicalAddress, E>;
-}
+use crate::memory::pmm::{PageFrameAllocator, PageFrameAllocatorError};
 
 /// Manages page tables
 #[derive(Debug)]
-pub struct PageTableManager<A, E> {
+pub struct PageTableManager<'a> {
     page_map_level4: *mut PageTable,
-    page_frame_allocator: A,
-    _marker: PhantomData<E>,
+    pub(in crate::memory) page_frame_allocator: PageFrameAllocator<'a>,
 }
 
-impl<'a, A: PageFrameAllocator<'a, E>, E> PageTableManager<A, E> {
-    pub fn new(page_map_level4: *mut PageTable, page_frame_allocator: A) -> Self {
+impl<'a> PageTableManager<'a> {
+    pub fn new(page_map_level4: *mut PageTable, page_frame_allocator: PageFrameAllocator<'a>) -> Self {
         Self {
             page_map_level4,
             page_frame_allocator,
-            _marker: PhantomData,
         }
     }
 
@@ -34,8 +27,8 @@ impl<'a, A: PageFrameAllocator<'a, E>, E> PageTableManager<A, E> {
         &mut self,
         virtual_memory: VirtualAddress,
         physical_memory: PhysicalAddress,
-        flags: PageEntryFlags
-    ) -> Result<(), E> {
+        flags: PageEntryFlags,
+    ) -> Result<(), PageFrameAllocatorError> {
         let indexer = PageMapIndexer::new(virtual_memory);
         let page_map_level4 = self.page_map_level4;
 
@@ -55,16 +48,11 @@ impl<'a, A: PageFrameAllocator<'a, E>, E> PageTableManager<A, E> {
         Ok(())
     }
 
-    pub fn frame_allocator(&mut self) -> &mut A {
-        &mut self.page_frame_allocator
-    }
-
-
     fn get_or_create_next_table(
         &mut self,
         current_table: *mut PageTable,
         index: u64,
-    ) -> Result<*mut PageTable, E> {
+    ) -> Result<*mut PageTable, PageFrameAllocatorError> {
         let entry = &mut unsafe { &mut *current_table }.entries[index as usize];
 
         if entry.flags().contains(PageEntryFlags::PRESENT) {

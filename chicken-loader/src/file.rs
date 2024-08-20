@@ -11,8 +11,7 @@ use chicken_util::{
 };
 use goblin::{elf::Elf, elf32::program_header::PT_LOAD};
 use uefi::{fs::FileSystem, prelude::BootServices, table::boot::AllocateType, CString16, Handle};
-
-use crate::memory::KERNEL_CODE;
+use uefi::table::boot::MemoryType;
 
 /// Gets data of a file from the filesystem
 pub(super) fn get_file_data(
@@ -65,7 +64,7 @@ pub(super) fn parse_elf(
 
     // allocate file data
     boot_services
-        .allocate_pages(AllocateType::Address(dest_start), KERNEL_CODE, num_pages)
+        .allocate_pages(AllocateType::Address(dest_start), MemoryType::LOADER_DATA, num_pages)
         .map_err(|error| format!("Could not allocate pages for elf file: {}.", error))?;
 
     // Copy program segments of elf into memory

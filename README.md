@@ -31,7 +31,6 @@ make run release=true
 ```bash
 make usb USB_DEVICE=/dev/<device> release=true
 ```
-**Unfortunately, there is currently an issue that causes the application to freeze when exiting UEFI boot services on some machines.** 
 
 ## Progress Overview
 

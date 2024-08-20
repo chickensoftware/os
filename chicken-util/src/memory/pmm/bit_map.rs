@@ -1,16 +1,15 @@
-use chicken_util::PAGE_SIZE;
-
 use crate::memory::pmm::PageFrameAllocatorError;
+use crate::PAGE_SIZE;
 
 #[repr(transparent)]
 #[derive(Debug)]
-pub(super) struct BitMap<'a> {
-    pub(super) buffer: &'a mut [u8],
+pub struct BitMap<'a> {
+    pub buffer: &'a mut [u8],
 }
 
 impl<'a> BitMap<'a> {
     /// Gets the bit on a certain index (in bits)
-    pub(super) fn get(&self, index: u64) -> Result<bool, PageFrameAllocatorError> {
+    pub fn get(&self, index: u64) -> Result<bool, PageFrameAllocatorError> {
         let byte_index = index / 8;
         if byte_index >= self.buffer.len() as u64 {
             return Err(PageFrameAllocatorError::InvalidBitMapIndex);
@@ -21,7 +20,7 @@ impl<'a> BitMap<'a> {
     }
 
     /// Sets the bit on a certain index (in bits), returns whether the action succeeds
-    pub(super) fn set(&mut self, index: u64, value: bool) -> Result<(), PageFrameAllocatorError> {
+    pub fn set(&mut self, index: u64, value: bool) -> Result<(), PageFrameAllocatorError> {
         let byte_index = index / 8;
         if byte_index >= self.buffer.len() as u64 {
             return Err(PageFrameAllocatorError::InvalidBitMapIndex);
@@ -39,7 +38,7 @@ impl<'a> BitMap<'a> {
         Ok(())
     }
 
-    pub(super) fn pages(&self) -> usize {
+    pub fn pages(&self) -> usize {
         (size_of::<BitMap>() + PAGE_SIZE - 1) / PAGE_SIZE
     }
 }

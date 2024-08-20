@@ -14,8 +14,6 @@ mod video;
 
 #[no_mangle]
 pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
-    qemu_println!("test");
-
     let boot_info = memory::setup(boot_info);
     video::setup(&boot_info);
     base::setup();

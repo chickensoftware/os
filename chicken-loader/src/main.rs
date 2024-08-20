@@ -18,10 +18,11 @@ use uefi::{
 use chicken_util::{
     BootInfo, graphics::font::Font, memory::paging::KERNEL_MAPPING_OFFSET, PAGE_SIZE,
 };
+use chicken_util::memory::pmm::PageFrameAllocator;
 
 use crate::memory::{
-    allocate_boot_info, allocate_kernel_stack, KERNEL_CODE, KERNEL_DATA, KERNEL_STACK,
-    KernelInfo, LOADER_PAGING, set_up_address_space,
+    allocate_boot_info, allocate_kernel_stack,
+    KernelInfo, set_up_address_space,
 };
 
 mod file;
@@ -121,23 +122,22 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     // text mode may still be enabled if operation failed
     validate!(fb_metadata, stdout);
     let fb_metadata = fb_metadata.unwrap();
+    let kernel_info = KernelInfo {
+        kernel_code_address: kernel_file_start_addr,
+        kernel_code_page_count: kernel_file_num_pages,
+        kernel_stack_address: kernel_stack_start_addr,
+        kernel_stack_page_count: kernel_stack_num_pages,
+        kernel_boot_info_address: kernel_boot_info_addr,
+    };
 
-    // setup paging + virtual address space for higher half kernel
-    let address_space_info = set_up_address_space(
-        &mut system_table,
-        KernelInfo {
-            kernel_file_start_addr,
-            kernel_file_num_pages,
-            kernel_stack_start_addr,
-            kernel_stack_num_pages,
-            kernel_boot_info_addr,
-        },
-    );
+    let (_runtime, mmap) = drop_boot_services(system_table, mmap_descriptors, &kernel_info);
+
+    // set up basic memory management and the virtual address space for the higher half kernel
+    let address_space_info = set_up_address_space(&mmap, kernel_info);
 
     // note: validate is no longer available after switching to graphics mode
-    let (pml4_addr, kernel_stack_addr, virtual_kernel_boot_info_addr) = address_space_info.unwrap();
+    let (pml4_address, virtual_rsp, kernel_boot_info_virtual_address, pmm) = address_space_info.unwrap();
 
-    let (_runtime, mmap) = drop_boot_services(system_table, mmap_descriptors);
     let boot_info = unsafe { &mut *(kernel_boot_info_addr as *mut BootInfo) };
     boot_info.memory_map = mmap;
     boot_info.framebuffer_metadata = fb_metadata;
@@ -146,6 +146,8 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         glyph_buffer_address: font_buffer_addr as *const u8,
         glyph_buffer_size: font_buffer_size,
     };
+    boot_info.pmm_address = &pmm as *const PageFrameAllocator as u64;
+
     unsafe {
         asm!(
         // boot info address
@@ -156,9 +158,9 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         "mov rsp, {1}",
         // jump to kernel entry
         "jmp {3}",
-        in(reg) virtual_kernel_boot_info_addr,
-        in(reg) kernel_stack_addr,
-        in(reg) pml4_addr,
+        in(reg) kernel_boot_info_virtual_address,
+        in(reg) virtual_rsp,
+        in(reg) pml4_address,
         in(reg) kernel_entry_addr
         );
     }
@@ -175,6 +177,7 @@ type ChickenMemoryType = chicken_util::memory::MemoryType;
 fn drop_boot_services(
     system_table: SystemTable<Boot>,
     mut descriptors: Vec<ChickenMemoryDescriptor>,
+    kernel_info: &KernelInfo,
 ) -> (SystemTable<Runtime>, ChickenMemoryMap) {
     // drop boot services
     let (runtime, uefi_mmap) = unsafe { system_table.exit_boot_services(MemoryType::LOADER_DATA) };
@@ -183,9 +186,6 @@ fn drop_boot_services(
     let mut first_available_addr = u64::MAX;
     let mut last_addr = u64::MIN;
     let mut last_available_addr = u64::MIN;
-    let desc_start_addr = descriptors.as_ptr() as u64;
-    let desc_end_addr =
-        desc_start_addr + (descriptors.capacity() * size_of::<ChickenMemoryDescriptor>()) as u64;
     // collect available memory descriptors (convert uefi mmap to chicken mmap)
     uefi_mmap.entries().for_each(|descriptor| {
         let phys_end = descriptor.phys_start + descriptor.page_count * PAGE_SIZE as u64;
@@ -193,60 +193,47 @@ fn drop_boot_services(
         if descriptor.phys_start < first_addr {
             first_addr = descriptor.phys_start;
         }
-        if descriptor.phys_start < first_available_addr
-            && matches!(
-                descriptor.ty,
-                MemoryType::CONVENTIONAL
-                    | MemoryType::BOOT_SERVICES_CODE
-                    | MemoryType::BOOT_SERVICES_DATA
-            )
-            && descriptor.phys_start != 0x0
-        {
-            first_available_addr = descriptor.phys_start;
-        }
-        if phys_end > last_addr {
-            last_addr = phys_end
-        }
-        if phys_end > last_available_addr
-            && matches!(
-                descriptor.ty,
-                MemoryType::CONVENTIONAL
-                    | MemoryType::BOOT_SERVICES_CODE
-                    | MemoryType::BOOT_SERVICES_DATA
-            )
-        {
-            last_available_addr = phys_end;
-        }
 
-        if descriptor.phys_start < 0x1000 {
-            descriptors.push(ChickenMemoryDescriptor {
-                phys_start: descriptor.phys_start,
-                phys_end,
-                num_pages: descriptor.page_count,
-                r#type: ChickenMemoryType::Reserved,
-            });
-            return;
-        }
-        // mark mmap data as boot info
-        else if descriptor.phys_start <= desc_start_addr && phys_end >= desc_end_addr {
-            descriptors.push(ChickenMemoryDescriptor {
-                phys_start: descriptor.phys_start,
-                phys_end,
-                num_pages: descriptor.page_count,
-                r#type: ChickenMemoryType::KernelData,
-            });
-            return;
-        }
-
-        let r#type = match descriptor.ty {
-            MemoryType::CONVENTIONAL
+        if descriptor.phys_start != 0x0
+            && matches!(
+        descriptor.ty,
+        MemoryType::CONVENTIONAL
+            | MemoryType::BOOT_SERVICES_CODE
             | MemoryType::BOOT_SERVICES_DATA
-            | MemoryType::BOOT_SERVICES_CODE => ChickenMemoryType::Available,
-            KERNEL_DATA => ChickenMemoryType::KernelData,
-            KERNEL_STACK => ChickenMemoryType::KernelStack,
-            KERNEL_CODE => ChickenMemoryType::KernelCode,
-            LOADER_PAGING => ChickenMemoryType::LoaderPageTables,
-            _ => ChickenMemoryType::Reserved,
+    ) {
+            if descriptor.phys_start < first_available_addr {
+                first_available_addr = descriptor.phys_start;
+            }
+            if phys_end > last_available_addr {
+                last_available_addr = phys_end;
+            }
+        }
+
+        if phys_end > last_addr {
+            last_addr = phys_end;
+        }
+
+        let r#type = if descriptor.phys_start < 0x1000 {
+            ChickenMemoryType::Reserved
+        }
+        // mark kernel file as kernel code
+        else if descriptor.phys_start <= kernel_info.kernel_code_address
+            && phys_end >= kernel_info.kernel_code_address + (kernel_info.kernel_code_page_count * PAGE_SIZE) as u64 {
+            ChickenMemoryType::KernelCode
+        }
+        // mark stack as kernel stack
+        else if descriptor.phys_start <= kernel_info.kernel_stack_address && phys_end >= kernel_info.kernel_stack_address + (kernel_info.kernel_stack_page_count * PAGE_SIZE) as u64 {
+            ChickenMemoryType::KernelStack
+        } else {
+            // Determine the core memory type based on the UEFI memory type
+            match descriptor.ty {
+                MemoryType::CONVENTIONAL
+                | MemoryType::BOOT_SERVICES_DATA
+                | MemoryType::BOOT_SERVICES_CODE => ChickenMemoryType::Available,
+                // mark mmap data, boot info, font data, ... as kernel data
+                | MemoryType::LOADER_DATA => ChickenMemoryType::KernelData,
+                _ => ChickenMemoryType::Reserved,
+            }
         };
 
         descriptors.push(ChickenMemoryDescriptor {
