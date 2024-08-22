@@ -18,7 +18,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     video::setup(&boot_info);
     base::setup();
 
-    qemu_println!("It did not crash.");
+    println!("It did not crash.");
     hlt_loop();
 }
 

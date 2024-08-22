@@ -5,13 +5,13 @@ use core::{
     write,
 };
 
-use crate::memory::{
-    MemoryMap,
-    MemoryType,
-    PhysicalAddress, pmm::bit_map::BitMap,
+use crate::{
+    memory::{
+        MemoryDescriptor, MemoryMap, MemoryType, paging::manager::PageTableManager,
+        PhysicalAddress, pmm::bit_map::BitMap,
+    },
+    PAGE_SIZE,
 };
-use crate::memory::paging::manager::PageTableManager;
-use crate::PAGE_SIZE;
 
 pub mod bit_map;
 
@@ -28,9 +28,7 @@ pub struct PageFrameAllocator<'a> {
 
 impl<'a> PageFrameAllocator<'a> {
     /// Tries to initialize new bit map allocator with given memory map. May fail if memory map is empty or the setup of the bitmap failed.
-    pub fn try_new(
-        memory_map: MemoryMap,
-    ) -> Result<Self, PageFrameAllocatorError> {
+    pub fn try_new(memory_map: MemoryMap) -> Result<Self, PageFrameAllocatorError> {
         // find memory region to store bitmap in
         let largest_memory_area = memory_map
             .descriptors()
@@ -68,10 +66,7 @@ impl<'a> PageFrameAllocator<'a> {
             reserved_memory: 0,
         };
         // reserve frames for bitmap
-        instance.reserve_frames(
-            largest_memory_area_ptr as u64,
-            instance.bit_map.pages(),
-        )?;
+        instance.reserve_frames(largest_memory_area_ptr as u64, instance.bit_map.pages())?;
 
         // reserve reserved memory descriptors (including kernel code, data, stack)
         let mmap = instance.memory_map;
@@ -98,6 +93,31 @@ impl<'a> PageFrameAllocator<'a> {
     /// Returns the amount of reserved memory in bytes
     pub fn reserved_memory(&self) -> u64 {
         self.reserved_memory
+    }
+
+    /// Used when switching to a new paging setup. Updates page frame allocator's memory map descriptors address and bit map buffer address.
+    ///
+    /// # Safety
+    /// The caller has to ensure that the addresses are valid and mapped.
+    pub unsafe fn update(
+        &mut self,
+        bit_map_buffer_address: u64,
+        memory_map_descriptors_address: u64,
+    ) {
+        // update bit map buffer address
+        let bit_map_buffer_size = self.bit_map.buffer.len();
+        self.bit_map.buffer =
+            slice_from_raw_parts_mut(bit_map_buffer_address as *mut u8, bit_map_buffer_size)
+                .as_mut()
+                .unwrap();
+
+        // update memory map descriptors address
+        self.memory_map.descriptors = memory_map_descriptors_address as *mut MemoryDescriptor;
+    }
+
+    /// Returns address of bit map buffer
+    pub fn bit_map_buffer_address(&self) -> u64 {
+        self.bit_map.buffer.as_ptr() as u64
     }
 }
 
@@ -160,10 +180,7 @@ impl PageFrameAllocator<'_> {
     }
 
     // either frees frame or does nothing if it is already free
-    pub fn free_frame(
-        &mut self,
-        address: PhysicalAddress,
-    ) -> Result<(), PageFrameAllocatorError> {
+    pub fn free_frame(&mut self, address: PhysicalAddress) -> Result<(), PageFrameAllocatorError> {
         let index = address / PAGE_SIZE as u64;
         if !self.bit_map.get(index)? {
             return Ok(());
@@ -252,7 +269,6 @@ impl<'a> From<PageTableManager<'a>> for PageFrameAllocator<'a> {
         value.page_frame_allocator
     }
 }
-
 
 /// Returns total amount of available memory in bytes based on memory map.
 pub fn total_available_memory(mmap: &MemoryMap) -> u64 {

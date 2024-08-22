@@ -10,13 +10,13 @@ use chicken_util::{
     graphics::font::Font,
     memory::{
         MemoryDescriptor,
-        MemoryMap, MemoryType, paging::{
-            KERNEL_MAPPING_OFFSET,
-            KERNEL_STACK_MAPPING_OFFSET, manager::PageTableManager, PageEntryFlags, PageTable,
-        }, PhysicalAddress,
+        MemoryMap,
+        MemoryType, paging::{
+            KERNEL_MAPPING_OFFSET, KERNEL_STACK_MAPPING_OFFSET, manager::PageTableManager, PageEntryFlags,
+            PageTable,
+        }, PhysicalAddress, pmm::{PageFrameAllocator, PageFrameAllocatorError},
     }, PAGE_SIZE,
 };
-use chicken_util::memory::pmm::{PageFrameAllocator, PageFrameAllocatorError};
 
 use crate::base::msr::Efer;
 
@@ -45,10 +45,10 @@ const VIRTUAL_DATA_BASE: u64 = 0xFFFF_FFFF_7000_0000;
 //                           |
 //                           |
 // 0x0000'0000'0000'0000   --+ <- Start of virtual address space
-pub(super) fn setup(
-    mut frame_allocator: PageFrameAllocator,
+pub(super) fn setup<'a>(
+    mut frame_allocator: PageFrameAllocator<'a>,
     old_boot_info: &BootInfo,
-) -> Result<(PhysicalAddress, BootInfo), PagingError> {
+) -> Result<(PageTableManager<'a>, BootInfo), PagingError> {
     let memory_map = old_boot_info.memory_map;
     // Allocate and clear a new PML4 page
     let pml4_addr = frame_allocator.request_page().map_err(PagingError::from)?;
@@ -58,8 +58,7 @@ pub(super) fn setup(
     let pml4_table = pml4_addr as *mut PageTable;
     unsafe { ptr::write_bytes(pml4_table, 0, 1) };
 
-    let mut manager: PageTableManager =
-        PageTableManager::new(pml4_table, frame_allocator);
+    let mut manager: PageTableManager = PageTableManager::new(pml4_table, frame_allocator);
     let smallest_addr = |desc_type: MemoryType| {
         memory_map
             .descriptors()
@@ -144,7 +143,22 @@ pub(super) fn setup(
         ..*old_boot_info
     };
 
-    Ok((pml4_addr, boot_info))
+    // update pmm memory map and bit map pointer to use mapped virtual addresses
+    let old_pmm_bit_map_buffer_address = manager.pmm().bit_map_buffer_address();
+
+    unsafe {
+        manager.pmm().update(
+            old_pmm_bit_map_buffer_address + VIRTUAL_PHYSICAL_BASE,
+            memory_map.descriptors as u64 - smallest_kernel_data_addr + VIRTUAL_DATA_BASE,
+        );
+    }
+
+    // update page table addresses to virtual ones
+    unsafe {
+        manager.update(VIRTUAL_PHYSICAL_BASE);
+    }
+
+    Ok((manager, boot_info))
 }
 
 /// Note: technically this only switches to a custom page table, since paging has already been enabled by uefi.
