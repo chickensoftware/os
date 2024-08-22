@@ -52,7 +52,8 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [x] Physical Memory Manager
 - [x] Paging
 - [ ] Virtual Memory Manager
-- [ ] Heap Allocator
+- [x] Basic Kernel Heap Allocator 
+- [ ] Full-fetched Kernel Heap Allocator
 
 ### Video Output
 - [x] Raw Framebuffer
@@ -70,6 +71,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [ ] Switching Modes
 - [ ] Interrupt Handling in Userspace
 - [ ] System Calls
+- [ ] Userspace Heap Allocator
 
 ### Inter-Process Communication
 - [ ] Shared Memory
