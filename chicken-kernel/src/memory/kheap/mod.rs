@@ -1,3 +1,9 @@
+use core::{
+    cell::OnceCell,
+    error::Error,
+    fmt::{Debug, Display, Formatter},
+};
+
 use chicken_util::{
     memory::{
         paging::{manager::PageTableManager, PageEntryFlags},
@@ -7,18 +13,24 @@ use chicken_util::{
 };
 
 use crate::{
-    memory::{kheap::bump::BumpAllocator, paging::PagingError},
+    memory::{kheap::linked_list::LinkedListAllocator, paging::PagingError},
     scheduling::spin::SpinLock,
 };
 
 mod bump;
 
+mod linked_list;
+
 pub(in crate::memory) const VIRTUAL_KERNEL_HEAP_BASE: u64 = 0xFFFF_FFFF_F000_0000;
 
+
 pub(super) const KERNEL_HEAP_PAGE_COUNT: usize = 0x100; // 1 MiB
+pub(super) const MAX_KERNEL_HEAP_PAGE_COUNT: usize = 0x4000; // 64 MiB
 
 #[global_allocator]
-static ALLOCATOR: SpinLock<BumpAllocator> = SpinLock::new(BumpAllocator::new());
+static ALLOCATOR: SpinLock<OnceCell<LinkedListAllocator>> = SpinLock::new(OnceCell::new());
+
+unsafe impl Send for LinkedListAllocator {}
 
 pub(super) fn init(
     heap_address: VirtualAddress,
@@ -39,10 +51,34 @@ pub(super) fn init(
             .unwrap();
     }
 
-    unsafe {
-        ALLOCATOR
-            .lock()
-            .init(heap_address, heap_page_count * PAGE_SIZE);
-    }
+    ALLOCATOR.lock().get_or_init(|| {
+        LinkedListAllocator::try_new(heap_address, heap_page_count * PAGE_SIZE).unwrap()
+    });
+
     Ok(())
 }
+
+#[derive(Copy, Clone)]
+pub(in crate::memory) enum HeapError {
+    InvalidBlockSize(usize),
+    OutOfMemory,
+}
+
+impl Debug for HeapError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        match self {
+            HeapError::InvalidBlockSize(size) => {
+                write!(f, "Heap Error: Invalid block size: {}.", size)
+            }
+            HeapError::OutOfMemory => write!(f, "Heap Error: Out of memory."),
+        }
+    }
+}
+
+impl Display for HeapError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl Error for HeapError {}

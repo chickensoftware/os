@@ -21,13 +21,6 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     video::setup(&boot_info);
     base::setup();
 
-    let mut x = vec![3, 4, 5];
-    println!("x: {:?}", x);
-
-    x.push(39);
-
-    println!("x after pushing the number 39: {:?}", x);
-
     println!("It did not crash.");
     hlt_loop();
 }

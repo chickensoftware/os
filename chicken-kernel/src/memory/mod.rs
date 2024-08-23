@@ -1,7 +1,4 @@
-use chicken_util::{
-    BootInfo,
-    memory::{pmm::PageFrameAllocator, VirtualAddress},
-};
+use chicken_util::{BootInfo, memory::pmm::PageFrameAllocator};
 
 use crate::memory::kheap::{KERNEL_HEAP_PAGE_COUNT, VIRTUAL_KERNEL_HEAP_BASE};
 
@@ -26,8 +23,8 @@ pub(super) fn setup(boot_info: &BootInfo) -> BootInfo {
     boot_info
 }
 
-/// Aligns a given address to the specified alignment.
-pub(in crate::memory) fn align_up(address: VirtualAddress, align: usize) -> VirtualAddress {
-    let align = align as VirtualAddress;
-    (address + align - 1) & !(align - 1)
+/// Aligns a given number to the specified alignment.
+pub(in crate::memory) fn align_up(number: u64, align: usize) -> u64 {
+    let align = align as u64;
+    (number + align - 1) & !(align - 1)
 }

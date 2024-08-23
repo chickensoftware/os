@@ -158,6 +158,8 @@ pub(super) fn setup<'a>(
         manager.update(VIRTUAL_PHYSICAL_BASE);
     }
 
+    // todo: free reserved loader page tables, since they are no longer needed
+
     Ok((manager, boot_info))
 }
 
