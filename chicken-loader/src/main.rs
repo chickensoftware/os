@@ -107,6 +107,14 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     validate!(font_info, stdout);
     let (font_header, font_buffer_addr, font_buffer_size) = font_info.unwrap();
 
+    print!("boot: Retrieving root system descriptor pointer", stdout);
+
+    let rsdp = memory::get_rsdp(&system_table);
+    let stdout = system_table.stdout();
+
+    validate!(rsdp, stdout);
+    let rsdp = rsdp.unwrap();
+
     // Exit boot services and handover control to kernel
     println!(
         "boot: Setting up address space and dropping boot services",
@@ -147,6 +155,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
         glyph_buffer_size: font_buffer_size,
     };
     boot_info.pmm_address = &pmm as *const PageFrameAllocator as u64;
+    boot_info.rsdp = rsdp;
 
     unsafe {
         asm!(
@@ -231,7 +240,8 @@ fn drop_boot_services(
                 | MemoryType::BOOT_SERVICES_DATA
                 | MemoryType::BOOT_SERVICES_CODE => ChickenMemoryType::Available,
                 // mark mmap data, boot info, font data, ... as kernel data
-                | MemoryType::LOADER_DATA => ChickenMemoryType::KernelData,
+                MemoryType::LOADER_DATA => ChickenMemoryType::KernelData,
+                MemoryType::ACPI_RECLAIM => ChickenMemoryType::AcpiData,
                 _ => ChickenMemoryType::Reserved,
             }
         };

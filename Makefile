@@ -10,7 +10,7 @@ TARGET_DIR_KERNEL_RELEASE = target/x86_64-unknown-none-chicken/release
 
 EFI_FILE = chicken-loader.efi
 KERNEL_FILE = chicken-kernel.elf
-FONT_FILE = light16.psf # currently light16.psf or ext-light32.psf
+FONT_FILE = light16.psf  # currently light16.psf or ext-light32.psf
 FONT_DIR = $(UTIL_DIR)/fonts
 
 BUILD_DIR = build

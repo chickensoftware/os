@@ -26,8 +26,8 @@ use crate::{
 
 pub(in crate::memory) static PTM: GlobalPageTableManager = GlobalPageTableManager::new();
 
-const VIRTUAL_PHYSICAL_BASE: u64 = 0xFFFF_8000_0000_0000;
-const VIRTUAL_DATA_BASE: u64 = 0xFFFF_FFFF_7000_0000;
+pub(super) const VIRTUAL_PHYSICAL_BASE: u64 = 0xFFFF_8000_0000_0000;
+pub(super) const VIRTUAL_DATA_BASE: u64 = 0xFFFF_FFFF_7000_0000;
 #[derive(Debug)]
 pub(in crate::memory) struct GlobalPageTableManager {
     inner: SpinLock<OnceCell<PageTableManager<'static>>>,
@@ -95,17 +95,9 @@ pub(super) fn setup<'a>(
     unsafe { ptr::write_bytes(pml4_table, 0, 1) };
 
     let mut manager: PageTableManager = PageTableManager::new(pml4_table, frame_allocator);
-    let smallest_addr = |desc_type: MemoryType| {
-        memory_map
-            .descriptors()
-            .iter()
-            .filter(|desc| desc.r#type == desc_type)
-            .map(|desc| desc.phys_start)
-            .min()
-            .ok_or(PagingError::InvalidMemoryMap)
-    };
-    let smallest_kernel_stack_addr = smallest_addr(MemoryType::KernelStack)?;
-    let smallest_kernel_data_addr = smallest_addr(MemoryType::KernelData)?;
+
+    let smallest_kernel_stack_addr = smallest_address(&[MemoryType::KernelStack], &memory_map)?;
+    let smallest_kernel_data_addr = smallest_address(&[MemoryType::KernelData, MemoryType::AcpiData], &memory_map)?;
 
     memory_map.descriptors().iter().try_for_each(|desc| {
         let (virtual_base, physical_base, page_entry_flags) = match desc.r#type {
@@ -131,6 +123,11 @@ pub(super) fn setup<'a>(
                 desc.phys_start - smallest_kernel_data_addr,
                 PageEntryFlags::default_nx(),
             ),
+            MemoryType::AcpiData => (
+                VIRTUAL_DATA_BASE,
+                desc.phys_start - smallest_kernel_data_addr,
+                PageEntryFlags::PRESENT
+            )
         };
 
         for page in 0..desc.num_pages {
@@ -164,6 +161,7 @@ pub(super) fn setup<'a>(
                 + VIRTUAL_DATA_BASE) as *const u8,
             ..old_font
         },
+        rsdp: old_boot_info.rsdp - smallest_kernel_data_addr + VIRTUAL_DATA_BASE,
         ..*old_boot_info
     };
 
@@ -234,4 +232,15 @@ impl From<PageFrameAllocatorError> for PagingError {
     fn from(value: PageFrameAllocatorError) -> Self {
         Self::PhysicalAllocationFailed(value)
     }
+}
+
+/// Returns the smallest physical address that matches the given descriptor type(s) or an error, if the memory map is invalid and does not contain any descriptors matching the specified type(s).
+pub(super) fn smallest_address(match_memory_types: &[MemoryType], memory_map: &MemoryMap) -> Result<PhysicalAddress, PagingError> {
+    memory_map
+        .descriptors()
+        .iter()
+        .filter(|desc| matches!(desc.r#type, t if match_memory_types.contains(&t)))
+        .map(|desc| desc.phys_start)
+        .min()
+        .ok_or(PagingError::InvalidMemoryMap)
 }

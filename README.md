@@ -43,6 +43,10 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [x] Interrupt Handling
 - [ ] Complete ISR
 - [ ] ACPI Tables
+    - [x] RSDP
+    - [x] RSDT/XSDT
+    - [ ] MADT
+    - [ ] FADT
 - [ ] APIC IO
 - [ ] Timer
 - [ ] Keyboard support

@@ -19,7 +19,10 @@ mod video;
 pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     let boot_info = memory::setup(boot_info);
     video::setup(&boot_info);
-    base::setup();
+    println!("kernel: Memory Management has been set up successfully.");
+    println!("kernel: Video output has been set up successfully.");
+    base::setup(&boot_info);
+    println!("kernel: Base Architecture has been set up successfully.");
 
     println!("It did not crash.");
     hlt_loop();

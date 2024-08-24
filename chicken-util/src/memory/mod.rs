@@ -70,4 +70,6 @@ pub enum MemoryType {
     KernelStack = 3,
     /// boot info, memory map
     KernelData = 4,
+    /// acpi tables
+    AcpiData
 }

@@ -14,5 +14,6 @@ pub struct BootInfo {
     pub memory_map: MemoryMap,
     pub framebuffer_metadata: FrameBufferMetadata,
     pub font: Font,
-    pub pmm_address: PhysicalAddress
+    pub pmm_address: PhysicalAddress,
+    pub rsdp: u64,
 }

@@ -1,14 +1,20 @@
-use chicken_util::{BootInfo, memory::pmm::PageFrameAllocator};
-
-use crate::memory::{
-    kheap::{KERNEL_HEAP_PAGE_COUNT, VIRTUAL_KERNEL_HEAP_BASE},
-    paging::GlobalPageTableManager,
-    vmm::{
-        AllocationType, GlobalVirtualMemoryManager, object::VmFlags,
-        VIRTUAL_VMM_BASE, VMM, VMM_PAGE_COUNT, VmmError,
+use chicken_util::{
+    BootInfo,
+    memory::{
+        MemoryMap,
+        MemoryType,
+        paging::{KERNEL_MAPPING_OFFSET, KERNEL_STACK_MAPPING_OFFSET}, pmm::PageFrameAllocator, VirtualAddress,
     },
 };
-use crate::memory::kheap::LockedHeap;
+
+use crate::memory::{
+    kheap::{KERNEL_HEAP_PAGE_COUNT, LockedHeap, VIRTUAL_KERNEL_HEAP_BASE},
+    paging::{GlobalPageTableManager, smallest_address, VIRTUAL_DATA_BASE, VIRTUAL_PHYSICAL_BASE},
+    vmm::{
+        AllocationType, GlobalVirtualMemoryManager, object::VmFlags, VIRTUAL_VMM_BASE, VMM,
+        VMM_PAGE_COUNT, VmmError,
+    },
+};
 
 pub(in crate::memory) mod paging;
 
@@ -72,5 +78,26 @@ fn mmio(boot_info: &mut BootInfo) -> Result<(), VmmError> {
         Ok(())
     } else {
         Err(VmmError::GlobalVirtualMemoryManagerUninitialized)
+    }
+}
+
+/// Returns the virtual memory offset used in the direct mapping for the given memory type. Returns None if the memory type does not get mapped or if the memory map is invalid/empty.
+pub(crate) fn get_virtual_offset(
+    memory_type: MemoryType,
+    memory_map: &MemoryMap,
+) -> Option<VirtualAddress> {
+    match memory_type {
+        MemoryType::Available => Some(VIRTUAL_PHYSICAL_BASE),
+        MemoryType::Reserved => None,
+        MemoryType::KernelCode => Some(KERNEL_MAPPING_OFFSET),
+        MemoryType::KernelStack => Some(
+            KERNEL_STACK_MAPPING_OFFSET
+                - smallest_address(&[MemoryType::KernelStack], memory_map).ok()?,
+        ),
+        MemoryType::KernelData | MemoryType::AcpiData => Some(
+            VIRTUAL_DATA_BASE
+                - smallest_address(&[MemoryType::KernelData, MemoryType::AcpiData], memory_map)
+                    .ok()?,
+        ),
     }
 }

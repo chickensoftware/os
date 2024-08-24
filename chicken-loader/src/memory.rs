@@ -7,20 +7,24 @@ use core::ptr;
 
 use uefi::{
     prelude::BootServices,
-    table::boot::{AllocateType::AnyPages, MemoryType},
+    table::{
+        boot::{AllocateType::AnyPages, MemoryType},
+        Boot,
+        cfg::{ACPI2_GUID, ACPI_GUID}, SystemTable,
+    },
 };
 
 use chicken_util::{
     memory::{
         paging::{
-            KERNEL_STACK_MAPPING_OFFSET,
-            manager::PageTableManager, PageEntryFlags, PageTable,
+            KERNEL_STACK_MAPPING_OFFSET, manager::PageTableManager, PageEntryFlags, PageTable,
         },
-        PhysicalAddress, VirtualAddress,
+        PhysicalAddress,
+        pmm::{PageFrameAllocator, PageFrameAllocatorError}, VirtualAddress,
     },
     PAGE_SIZE,
 };
-use chicken_util::memory::pmm::{PageFrameAllocator, PageFrameAllocatorError};
+
 use crate::{ChickenMemoryDescriptor, ChickenMemoryMap, KERNEL_MAPPING_OFFSET, KERNEL_STACK_SIZE};
 
 #[derive(Copy, Clone, Debug)]
@@ -75,7 +79,15 @@ pub(super) fn allocate_boot_info(
 pub(super) fn set_up_address_space(
     memory_map: &ChickenMemoryMap,
     kernel_info: KernelInfo,
-) -> Result<(PhysicalAddress, VirtualAddress, VirtualAddress, PageFrameAllocator), PageFrameAllocatorError> {
+) -> Result<
+    (
+        PhysicalAddress,
+        VirtualAddress,
+        VirtualAddress,
+        PageFrameAllocator,
+    ),
+    PageFrameAllocatorError,
+> {
     let KernelInfo {
         kernel_code_address,
         kernel_code_page_count,
@@ -107,7 +119,11 @@ pub(super) fn set_up_address_space(
 
     for page in 0..page_count {
         let physical_address = (PAGE_SIZE * page) as u64 + first_addr;
-        manager.map_memory(physical_address, physical_address, PageEntryFlags::default())?;
+        manager.map_memory(
+            physical_address,
+            physical_address,
+            PageEntryFlags::default(),
+        )?;
     }
 
     // map higher half kernel virtual addresses to physical kernel addresses
@@ -127,7 +143,11 @@ pub(super) fn set_up_address_space(
     // map boot info page to higher half right above stack
     let kernel_boot_info_virtual_address =
         KERNEL_STACK_MAPPING_OFFSET + (kernel_stack_page_count * PAGE_SIZE) as u64;
-    manager.map_memory(kernel_boot_info_virtual_address, kernel_boot_info_address, PageEntryFlags::default())?;
+    manager.map_memory(
+        kernel_boot_info_virtual_address,
+        kernel_boot_info_address,
+        PageEntryFlags::default(),
+    )?;
 
     let pmm: PageFrameAllocator = manager.into();
 
@@ -135,6 +155,17 @@ pub(super) fn set_up_address_space(
         pml4_addr,
         KERNEL_STACK_MAPPING_OFFSET + KERNEL_STACK_SIZE as u64,
         kernel_boot_info_virtual_address,
-        pmm
+        pmm,
     ))
+}
+
+/// Get root system descriptor pointer address
+pub(super) fn get_rsdp(st: &SystemTable<Boot>) -> Result<u64, String> {
+    let mut config_entries = st.config_table().iter();
+    // look for an ACPI2 RSDP first
+    let acpi2_rsdp = config_entries.find(|entry| matches!(entry.guid, ACPI2_GUID));
+    // if ACPI2 isn't found, use ACPI1 RSDP instead
+    let rsdp = acpi2_rsdp.or_else(|| config_entries.find(|entry| matches!(entry.guid, ACPI_GUID)));
+    rsdp.map(|entry| entry.address as u64)
+        .ok_or("Could not find RSDP.".to_string())
 }
