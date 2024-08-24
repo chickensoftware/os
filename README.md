@@ -53,7 +53,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [x] Paging
 - [x] Global Page Table Manager
 - [x] Virtual Memory Manager
-- [ ] Global Virtual Memory Manager 
+- [x] Global Virtual Memory Manager 
 - [x] Basic Kernel Heap Allocator 
     - [x] Bump Allocator
     - [x] Linked List Allocator

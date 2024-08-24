@@ -1,5 +1,5 @@
 use alloc::alloc::GlobalAlloc;
-use core::{alloc::Layout, cell::OnceCell, ptr, ptr::NonNull};
+use core::{alloc::Layout, ptr, ptr::NonNull};
 
 use chicken_util::{
     memory::{paging::PageEntryFlags, VirtualAddress},
@@ -12,8 +12,8 @@ use crate::{
         kheap::{HeapError, MAX_KERNEL_HEAP_PAGE_COUNT},
         paging::{PagingError, PTM},
     },
-    scheduling::spin::SpinLock,
 };
+use crate::memory::kheap::LockedHeap;
 
 #[derive(Debug)]
 struct ListNode {
@@ -194,7 +194,7 @@ impl LinkedListAllocator {
     }
 }
 
-unsafe impl GlobalAlloc for SpinLock<OnceCell<LinkedListAllocator>> {
+unsafe impl GlobalAlloc for LockedHeap {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let heap = &mut self.lock();
 

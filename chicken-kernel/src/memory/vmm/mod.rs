@@ -1,6 +1,7 @@
 use alloc::alloc::dealloc;
 use core::{
     alloc::Layout,
+    cell::OnceCell,
     error::Error,
     fmt::{Debug, Display, Formatter},
     ptr::NonNull,
@@ -11,17 +12,49 @@ use chicken_util::{
     PAGE_SIZE,
 };
 
-use crate::memory::{
-    align_up,
-    paging::{PagingError, PTM},
-    vmm::object::{VmFlags, VmObject},
+use crate::{
+    memory::{
+        align_up,
+        paging::{PagingError, PTM},
+        vmm::object::{VmFlags, VmObject},
+    },
+    scheduling::spin::SpinLock,
 };
+use crate::scheduling::spin::Guard;
 
 pub(in crate::memory) const VIRTUAL_VMM_BASE: u64 = 0xFFFF_FFFF_C000_0000;
 /// Maximum amount of pages allowed for vmm objects' memory
 pub(in crate::memory) const VMM_PAGE_COUNT: usize = 0x4000; // 64 MiB
 
 pub(in crate::memory) mod object;
+
+pub(in crate::memory) static VMM: GlobalVirtualMemoryManager = GlobalVirtualMemoryManager::new();
+
+#[derive(Debug)]
+pub(in crate::memory) struct GlobalVirtualMemoryManager {
+    inner: SpinLock<OnceCell<VirtualMemoryManager>>,
+}
+
+unsafe impl Send for GlobalVirtualMemoryManager {}
+unsafe impl Sync for GlobalVirtualMemoryManager {}
+
+impl GlobalVirtualMemoryManager {
+    const fn new() -> Self {
+        Self {
+            inner: SpinLock::new(OnceCell::new()),
+        }
+    }
+
+    pub(super) fn init(vmm_start: VirtualAddress, vmm_page_count: usize) {
+        let vmm = VMM.inner.lock();
+        vmm.get_or_init(|| VirtualMemoryManager::new(vmm_start, vmm_page_count));
+    }
+
+    pub(super) fn lock(&self) -> Guard<OnceCell<VirtualMemoryManager>> {
+        self.inner.lock()
+    }
+
+}
 
 #[allow(dead_code)] // otherwise, clippy complains about the flags field being 'unused'
 /// Uses global page table manager and kernel heap to keep track of allocated virtual memory objects with specific permissions.
@@ -223,12 +256,14 @@ pub(in crate::memory) enum VmmError {
     PageFrameAllocatorError(PageFrameAllocatorError),
     RequestedVmObjectIsNotAllocated(VirtualAddress),
     OutOfMemory,
+    GlobalVirtualMemoryManagerUninitialized
 }
 
 impl Debug for VmmError {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             VmmError::OutOfMemory => write!(f, "VmmError: Out of memory."),
+            VmmError::GlobalVirtualMemoryManagerUninitialized => write!(f, "VmmError: Global virtual memory manager has not been initialized."),
             VmmError::PageTableManagerError(value) => {
                 write!(f, "VmmError: {}.", value)
             }
