@@ -5,17 +5,19 @@ use core::{
 };
 
 use chicken_util::{
-    memory::{
-        paging::{manager::PageTableManager, PageEntryFlags},
-        VirtualAddress,
-    },
+    memory::{paging::PageEntryFlags, VirtualAddress},
     PAGE_SIZE,
 };
+use chicken_util::memory::pmm::PageFrameAllocatorError;
 
 use crate::{
-    memory::{kheap::linked_list::LinkedListAllocator, paging::PagingError},
+    memory::{
+        kheap::linked_list::LinkedListAllocator,
+        paging::PTM,
+    },
     scheduling::spin::SpinLock,
 };
+use crate::memory::paging::PagingError;
 
 mod bump;
 
@@ -23,45 +25,52 @@ mod linked_list;
 
 pub(in crate::memory) const VIRTUAL_KERNEL_HEAP_BASE: u64 = 0xFFFF_FFFF_F000_0000;
 
-
 pub(super) const KERNEL_HEAP_PAGE_COUNT: usize = 0x100; // 1 MiB
 pub(super) const MAX_KERNEL_HEAP_PAGE_COUNT: usize = 0x4000; // 64 MiB
 
+/// Heap used by the kernel itself. Provides dynamic allocations for the VMM.
+/// User Applications have their own user heap that depends on the VMM.
 #[global_allocator]
 static ALLOCATOR: SpinLock<OnceCell<LinkedListAllocator>> = SpinLock::new(OnceCell::new());
 
+// only access occurs through spinlock
 unsafe impl Send for LinkedListAllocator {}
 
 pub(super) fn init(
     heap_address: VirtualAddress,
     heap_page_count: usize,
-    page_table_manager: &mut PageTableManager,
-) -> Result<(), PagingError> {
-    for page in 0..heap_page_count {
-        let physical_address = page_table_manager
-            .pmm()
-            .request_page()
-            .map_err(PagingError::from)?;
-        page_table_manager
-            .map_memory(
-                heap_address + (page * PAGE_SIZE) as u64,
-                physical_address,
-                PageEntryFlags::default_nx(),
-            )
-            .unwrap();
+) -> Result<(), HeapError> {
+    if let Some(page_table_manager) = PTM.lock().get_mut() {
+        for page in 0..heap_page_count {
+            let physical_address = page_table_manager
+                .pmm()
+                .request_page()
+                .map_err(HeapError::from)?;
+
+            page_table_manager
+                .map_memory(
+                    heap_address + (page * PAGE_SIZE) as u64,
+                    physical_address,
+                    PageEntryFlags::default_nx(),
+                )
+                .map_err(HeapError::from)?;
+        }
+        let heap = LinkedListAllocator::try_new(heap_address, heap_page_count * PAGE_SIZE)?;
+        ALLOCATOR.lock().get_or_init(|| {
+            heap
+        });
+        Ok(())
+    } else {
+        Err(HeapError::VirtualMemoryError(PagingError::GlobalPageTableManagerUninitialized))
     }
-
-    ALLOCATOR.lock().get_or_init(|| {
-        LinkedListAllocator::try_new(heap_address, heap_page_count * PAGE_SIZE).unwrap()
-    });
-
-    Ok(())
 }
 
 #[derive(Copy, Clone)]
 pub(in crate::memory) enum HeapError {
     InvalidBlockSize(usize),
     OutOfMemory,
+    VirtualMemoryError(PagingError),
+    PageFrameAllocationFailed(PageFrameAllocatorError)
 }
 
 impl Debug for HeapError {
@@ -71,6 +80,8 @@ impl Debug for HeapError {
                 write!(f, "Heap Error: Invalid block size: {}.", size)
             }
             HeapError::OutOfMemory => write!(f, "Heap Error: Out of memory."),
+            HeapError::VirtualMemoryError(value) => write!(f, "Heap Error: Paging error: {}", value),
+            HeapError::PageFrameAllocationFailed(value) => write!(f, "Heap Error: Page frame allocation or mapping has failed: {}.", value),
         }
     }
 }
@@ -82,3 +93,16 @@ impl Display for HeapError {
 }
 
 impl Error for HeapError {}
+
+impl From<PageFrameAllocatorError> for HeapError {
+    fn from(value: PageFrameAllocatorError) -> Self {
+        Self::PageFrameAllocationFailed(value)
+    }
+}
+
+
+impl From<PagingError> for HeapError {
+    fn from(value: PagingError) -> Self {
+        Self::VirtualMemoryError(value)
+    }
+}

@@ -1,22 +1,32 @@
 use chicken_util::{BootInfo, memory::pmm::PageFrameAllocator};
 
-use crate::memory::kheap::{KERNEL_HEAP_PAGE_COUNT, VIRTUAL_KERNEL_HEAP_BASE};
+use crate::memory::{
+    kheap::{KERNEL_HEAP_PAGE_COUNT, VIRTUAL_KERNEL_HEAP_BASE},
+};
+use crate::memory::paging::GlobalPageTableManager;
 
 mod kheap;
 pub(in crate::memory) mod paging;
 
 /// Sets up memory management and returns Boot info with proper virtual address pointers
 pub(super) fn setup(boot_info: &BootInfo) -> BootInfo {
+    // get physical memory manager
     let pmm = unsafe { (boot_info.pmm_address as *const PageFrameAllocator).read() };
-    let (mut manager, boot_info) = paging::setup(pmm, boot_info).unwrap();
+
+    // set up paging
+    let (manager, boot_info) = paging::setup(pmm, boot_info).unwrap();
     let pml4 = manager.pml4() as u64;
 
+    // switch to new paging scheme
     paging::enable(pml4);
 
+    // initialize static global page table manager
+    GlobalPageTableManager::init(manager);
+
+    // initialize kernel heap
     kheap::init(
         VIRTUAL_KERNEL_HEAP_BASE,
         KERNEL_HEAP_PAGE_COUNT,
-        &mut manager,
     )
     .unwrap();
 

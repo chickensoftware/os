@@ -7,6 +7,7 @@ use core::{
     },
 };
 
+#[derive(Debug)]
 pub(crate) struct SpinLock<T> {
     locked: AtomicBool,
     value: UnsafeCell<T>,

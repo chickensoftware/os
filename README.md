@@ -51,8 +51,11 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [x] Custom Memory Map
 - [x] Physical Memory Manager
 - [x] Paging
+- [x] Global Page Table Manager
 - [ ] Virtual Memory Manager
 - [x] Basic Kernel Heap Allocator 
+    - [x] Bump Allocator
+    - [x] Linked List Allocator
 - [ ] Full-fetched Kernel Heap Allocator
 
 ### Video Output

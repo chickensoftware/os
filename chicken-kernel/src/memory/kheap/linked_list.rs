@@ -1,12 +1,16 @@
 use alloc::alloc::GlobalAlloc;
 use core::{alloc::Layout, cell::OnceCell, ptr, ptr::NonNull};
 
-use chicken_util::{memory::VirtualAddress, PAGE_SIZE};
+use chicken_util::{
+    memory::{paging::PageEntryFlags, VirtualAddress},
+    PAGE_SIZE,
+};
 
 use crate::{
     memory::{
         align_up,
         kheap::{HeapError, MAX_KERNEL_HEAP_PAGE_COUNT},
+        paging::{PagingError, PTM},
     },
     scheduling::spin::SpinLock,
 };
@@ -22,6 +26,7 @@ struct ListNode {
 #[derive(Clone, Debug)]
 pub(super) struct LinkedListAllocator {
     heap_size: usize,
+    heap_start: VirtualAddress,
     head: Option<NonNull<ListNode>>,
 }
 
@@ -43,6 +48,7 @@ impl LinkedListAllocator {
             }
             Ok(Self {
                 heap_size,
+                heap_start,
                 head: Some(start_node),
             })
         }
@@ -50,7 +56,6 @@ impl LinkedListAllocator {
 }
 
 impl LinkedListAllocator {
-
     /// Tries to find a fitting list node in the linked list to home a new block of allocated memory.
     fn find_fit(&mut self, size: usize) -> Result<NonNull<ListNode>, HeapError> {
         let mut current = self.head;
@@ -140,21 +145,52 @@ impl LinkedListAllocator {
 
     /// Attempts to expand the memory mapped for the heap allocator.
     fn expand(&mut self, size: usize) -> Result<(), HeapError> {
-        let total_size = align_up(
-            (size + size_of::<ListNode>()) as u64,
-            align_of::<ListNode>(),
-        );
-
         let old_heap_page_count = (self.heap_size + PAGE_SIZE - 1) / PAGE_SIZE;
-        let new_heap_page_count =
-            (total_size as usize + PAGE_SIZE - 1) / PAGE_SIZE + old_heap_page_count;
+        let new_heap_page_count = (size + PAGE_SIZE - 1) / PAGE_SIZE + old_heap_page_count;
+
         // check if expansion is valid
         if new_heap_page_count > MAX_KERNEL_HEAP_PAGE_COUNT {
             return Err(HeapError::OutOfMemory);
         }
+        let mut ptm = PTM.lock();
+        let page_table_manager = ptm.get_mut();
+        if let Some(page_table_manager) = page_table_manager {
+            for page in old_heap_page_count..new_heap_page_count {
+                // allocate new physical frames for heap
+                let physical_address = page_table_manager
+                    .pmm()
+                    .request_page()
+                    .map_err(|_| HeapError::OutOfMemory)?;
 
-        // todo: expand heap
-        unimplemented!("heap expansion");
+                // map newly allocated frames to virtual heap offset
+                page_table_manager
+                    .map_memory(
+                        self.heap_start + (page * PAGE_SIZE) as u64,
+                        physical_address,
+                        PageEntryFlags::default_nx(),
+                    )
+                    .map_err(|_| HeapError::OutOfMemory)?;
+            }
+
+            // find last free list node and expand it
+            let current = self.head;
+            while let Some(mut node) = current {
+                let node_ref = unsafe { node.as_mut() };
+                // last free node
+                if node_ref.free && node_ref.next.is_none() {
+                    node_ref.size += size;
+                    break;
+                }
+            }
+
+            self.heap_size += size;
+
+            Ok(())
+        } else {
+            Err(HeapError::VirtualMemoryError(
+                PagingError::GlobalPageTableManagerUninitialized,
+            ))
+        }
     }
 }
 
@@ -171,7 +207,11 @@ unsafe impl GlobalAlloc for SpinLock<OnceCell<LinkedListAllocator>> {
             } else {
                 // expand heap
                 if heap.expand(size).is_ok() {
-                    self.alloc(layout);
+                    if let Ok(fit_node) = heap.find_fit(size) {
+                        if heap.split_block(fit_node, size).is_ok() {
+                            return fit_node.as_ptr().add(1) as *mut u8;
+                        }
+                    }
                 }
             }
         }

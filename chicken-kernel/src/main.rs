@@ -28,6 +28,8 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     qemu_println!("panic: {}", info);
+    println!("panic: {}", info);
+
     hlt_loop();
 }
 

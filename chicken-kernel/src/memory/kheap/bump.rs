@@ -1,6 +1,4 @@
-// note: for now using a simple bump allocator, will be a more sophisticated design later
-/// Heap used by the kernel itself. Provides dynamic allocations for VMM
-/// User Applications have their own user heap that depends on the VMM
+#![allow(dead_code)]
 use core::{
     alloc::{GlobalAlloc, Layout},
     ptr,
@@ -11,7 +9,7 @@ use chicken_util::memory::VirtualAddress;
 use crate::{memory::align_up, scheduling::spin::SpinLock};
 
 #[derive(Copy, Clone, Debug)]
-pub struct BumpAllocator {
+pub(super) struct BumpAllocator {
     heap_start: VirtualAddress,
     heap_end: VirtualAddress,
     next: VirtualAddress,
@@ -19,7 +17,7 @@ pub struct BumpAllocator {
 }
 
 impl BumpAllocator {
-    pub const fn new() -> Self {
+    pub(super) const fn new() -> Self {
         Self {
             heap_start: 0,
             heap_end: 0,
@@ -28,7 +26,7 @@ impl BumpAllocator {
         }
     }
 
-    pub unsafe fn init(&mut self, heap_start: VirtualAddress, heap_size: usize) {
+    pub(super) unsafe fn init(&mut self, heap_start: VirtualAddress, heap_size: usize) {
         self.heap_start = heap_start;
         self.heap_end = heap_size as VirtualAddress + heap_start;
         self.next = heap_start;

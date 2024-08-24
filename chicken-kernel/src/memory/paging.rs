@@ -1,5 +1,6 @@
 use core::{
     arch::asm,
+    cell::OnceCell,
     error::Error,
     fmt::{Debug, Display, Formatter},
     ptr,
@@ -18,10 +19,39 @@ use chicken_util::{
     }, PAGE_SIZE,
 };
 
-use crate::base::msr::Efer;
+use crate::{
+    base::msr::Efer,
+    scheduling::spin::{Guard, SpinLock},
+};
+
+pub(in crate::memory) static PTM: GlobalPageTableManager = GlobalPageTableManager::new();
 
 const VIRTUAL_PHYSICAL_BASE: u64 = 0xFFFF_8000_0000_0000;
 const VIRTUAL_DATA_BASE: u64 = 0xFFFF_FFFF_7000_0000;
+#[derive(Debug)]
+pub(in crate::memory) struct GlobalPageTableManager {
+    inner: SpinLock<OnceCell<PageTableManager<'static>>>,
+}
+
+unsafe impl Send for GlobalPageTableManager {}
+unsafe impl Sync for GlobalPageTableManager {}
+
+impl GlobalPageTableManager {
+    const fn new() -> Self {
+        Self {
+            inner: SpinLock::new(OnceCell::new()),
+        }
+    }
+
+    pub(super) fn init(page_table_manager: PageTableManager<'static>) {
+        let ptm = PTM.inner.lock();
+        ptm.get_or_init(|| page_table_manager);
+    }
+    pub(in crate::memory) fn lock(&self) -> Guard<OnceCell<PageTableManager<'static>>> {
+        self.inner.lock()
+    }
+}
+
 /// Function to set up custom paging scheme. Returns virtual address of page manager level 4 table. Also returns boot info with updated usable virtual addresses
 // New setup:
 // 0xffff'ffff'ffff'ffff   --+ <- End of virtual address space
@@ -175,6 +205,7 @@ pub(in crate::memory) enum PagingError {
     PhysicalAllocationFailed(PageFrameAllocatorError),
     Pml4PointerMisaligned,
     InvalidMemoryMap,
+    GlobalPageTableManagerUninitialized,
 }
 
 impl Debug for PagingError {
@@ -189,6 +220,10 @@ impl Debug for PagingError {
                 write!(f, "Paging Error: Page Map Level 4 pointer is misaligned.")
             }
             PagingError::InvalidMemoryMap => write!(f, "Paging Error: Invalid memory map."),
+            PagingError::GlobalPageTableManagerUninitialized => write!(
+                f,
+                "Paging Error: Global page table manager has not been initialized."
+            ),
         }
     }
 }
