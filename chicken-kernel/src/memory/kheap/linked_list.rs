@@ -187,7 +187,7 @@ impl LinkedListAllocator {
 
             Ok(())
         } else {
-            Err(HeapError::VirtualMemoryError(
+            Err(HeapError::PageTableManagerError(
                 PagingError::GlobalPageTableManagerUninitialized,
             ))
         }

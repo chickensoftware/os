@@ -57,6 +57,12 @@ impl GlobalPageTableManager {
 // 0xffff'ffff'ffff'ffff   --+ <- End of virtual address space
 //                           |
 //                           |
+//  0xffff'ffff'f000'0000   --+ <- Heap segment
+//                           |    Maps to the physical memory dedicated to heap
+// 0xffff'ffff'c000'0000   --+ <- VMM objects
+//                           |    Maps to the physical memory dedicated to VMM objects
+//                           |
+//                           |
 //                           |
 //                           |
 // 0xffff'ffff'8000'0000   --+ <- Kernel code and data segment (Higher half kernel)
@@ -138,18 +144,6 @@ pub(super) fn setup<'a>(
 
         Ok(())
     })?;
-
-    let framebuffer_metadata = old_boot_info.framebuffer_metadata;
-    // identity map framebuffer
-    let fb_base_address = framebuffer_metadata.base;
-    let fb_num_pages = (framebuffer_metadata.size + PAGE_SIZE - 1) / PAGE_SIZE;
-
-    for page in 0..fb_num_pages {
-        let address = fb_base_address + (page * PAGE_SIZE) as u64;
-        manager
-            .map_memory(address, address, PageEntryFlags::default_nx())
-            .map_err(PagingError::from)?;
-    }
 
     // enable no-execute feature if available
     if let Some(mut efer) = Efer::read() {

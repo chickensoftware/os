@@ -33,7 +33,7 @@ pub(super) const MAX_KERNEL_HEAP_PAGE_COUNT: usize = 0x4000; // 64 MiB
 #[global_allocator]
 static ALLOCATOR: SpinLock<OnceCell<LinkedListAllocator>> = SpinLock::new(OnceCell::new());
 
-// only access occurs through spinlock
+// only access occurs through spinlock. todo: add LockedHeap struct that owns SpinLock of LinkedListAllocator (incl. OnceCell)
 unsafe impl Send for LinkedListAllocator {}
 
 pub(super) fn init(
@@ -61,7 +61,7 @@ pub(super) fn init(
         });
         Ok(())
     } else {
-        Err(HeapError::VirtualMemoryError(PagingError::GlobalPageTableManagerUninitialized))
+        Err(HeapError::PageTableManagerError(PagingError::GlobalPageTableManagerUninitialized))
     }
 }
 
@@ -69,7 +69,7 @@ pub(super) fn init(
 pub(in crate::memory) enum HeapError {
     InvalidBlockSize(usize),
     OutOfMemory,
-    VirtualMemoryError(PagingError),
+    PageTableManagerError(PagingError),
     PageFrameAllocationFailed(PageFrameAllocatorError)
 }
 
@@ -80,7 +80,7 @@ impl Debug for HeapError {
                 write!(f, "Heap Error: Invalid block size: {}.", size)
             }
             HeapError::OutOfMemory => write!(f, "Heap Error: Out of memory."),
-            HeapError::VirtualMemoryError(value) => write!(f, "Heap Error: Paging error: {}", value),
+            HeapError::PageTableManagerError(value) => write!(f, "Heap Error: {}", value),
             HeapError::PageFrameAllocationFailed(value) => write!(f, "Heap Error: Page frame allocation or mapping has failed: {}.", value),
         }
     }
@@ -103,6 +103,6 @@ impl From<PageFrameAllocatorError> for HeapError {
 
 impl From<PagingError> for HeapError {
     fn from(value: PagingError) -> Self {
-        Self::VirtualMemoryError(value)
+        Self::PageTableManagerError(value)
     }
 }

@@ -13,7 +13,7 @@ bitflags! {
         const PRESENT        = 1 << 0;
         /// Read/Write permission
         const READ_WRITE     = 1 << 1;
-        /// Controls access to page based on privilege level
+        /// Controls access to page based on privilege level. If set, it can be accessed by all, otherwise, just the kernel.
         const USER_SUPER     = 1 << 2;
         /// Page Write Though: Enables write-though caching
         const WRITE_THROUGH  = 1 << 3;

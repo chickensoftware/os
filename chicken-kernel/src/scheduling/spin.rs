@@ -35,7 +35,7 @@ impl<T> SpinLock<T> {
 }
 
 unsafe impl<T> Sync for SpinLock<T> where T: Send {}
-
+#[derive(Debug)]
 pub(crate) struct Guard<'a, T> {
     lock: &'a SpinLock<T>,
 }
