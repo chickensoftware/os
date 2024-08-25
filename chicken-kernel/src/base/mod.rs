@@ -13,6 +13,8 @@ use crate::{
 
 mod acpi;
 mod gdt;
+mod io;
+
 pub(crate) mod interrupts;
 pub(crate) mod msr;
 
@@ -39,7 +41,7 @@ pub(super) fn setup(boot_info: &BootInfo) {
     for entry in lapic_nmis.iter() {
         println!("{:?}", entry);
     }
-
     idt::initialize();
+    io::initialize(boot_info);
     interrupts::enable();
 }
