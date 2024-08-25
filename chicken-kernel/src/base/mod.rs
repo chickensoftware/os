@@ -2,13 +2,12 @@ use chicken_util::BootInfo;
 
 use crate::{
     base::{
-        acpi::{
-            rsd::Rsd,
-            sdt::get_xsdt,
+        acpi::madt::{
+            entry::{InterruptSourceOverride, IOApic, LApic, LApicNmi},
+            Madt,
         },
         interrupts::idt,
-    }
-    ,
+    },
     println,
 };
 
@@ -20,9 +19,26 @@ pub(crate) mod msr;
 pub(super) fn setup(boot_info: &BootInfo) {
     gdt::initialize();
 
-    let rsd = Rsd::get(boot_info.rsdp).unwrap();
-    let xsdt = get_xsdt(rsd.rsd_table_address(), &boot_info.memory_map).unwrap();
-    println!("xsdt: {:#?}", xsdt);
+    let madt = unsafe { Madt::get(boot_info).as_ref().unwrap() };
+    println!("successfully, parsed madt");
+
+    let overrides = madt.parse_entries::<InterruptSourceOverride>();
+    for entry in overrides.iter() {
+        println!("{:?}", entry);
+    }
+
+    let ioapics = madt.parse_entries::<IOApic>();
+    println!("ioapics: {:?}", ioapics);
+
+    let lapics = madt.parse_entries::<LApic>();
+    for entry in lapics.iter() {
+        println!("{:?}", entry);
+    }
+
+    let lapic_nmis = madt.parse_entries::<LApicNmi>();
+    for entry in lapic_nmis.iter() {
+        println!("{:?}", entry);
+    }
 
     idt::initialize();
     interrupts::enable();

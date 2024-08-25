@@ -126,7 +126,8 @@ pub(super) fn setup<'a>(
             MemoryType::AcpiData => (
                 VIRTUAL_DATA_BASE,
                 desc.phys_start - smallest_kernel_data_addr,
-                PageEntryFlags::PRESENT
+                // note: leaving it as default_nx for now. May be set to PRESENT only later
+                PageEntryFlags::default_nx()
             )
         };
 

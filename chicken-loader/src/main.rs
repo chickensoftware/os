@@ -190,7 +190,6 @@ fn drop_boot_services(
 ) -> (SystemTable<Runtime>, ChickenMemoryMap) {
     // drop boot services
     let (runtime, uefi_mmap) = unsafe { system_table.exit_boot_services(MemoryType::LOADER_DATA) };
-
     let mut first_addr = u64::MAX;
     let mut first_available_addr = u64::MAX;
     let mut last_addr = u64::MIN;
@@ -241,7 +240,7 @@ fn drop_boot_services(
                 | MemoryType::BOOT_SERVICES_CODE => ChickenMemoryType::Available,
                 // mark mmap data, boot info, font data, ... as kernel data
                 MemoryType::LOADER_DATA => ChickenMemoryType::KernelData,
-                MemoryType::ACPI_RECLAIM => ChickenMemoryType::AcpiData,
+                MemoryType::ACPI_RECLAIM | MemoryType::ACPI_NON_VOLATILE  => ChickenMemoryType::AcpiData,
                 _ => ChickenMemoryType::Reserved,
             }
         };

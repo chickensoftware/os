@@ -1,5 +1,6 @@
 pub(in crate::base) mod rsd;
 pub(in crate::base) mod sdt;
+pub(in crate::base) mod madt;
 
 use core::fmt;
 

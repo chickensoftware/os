@@ -45,7 +45,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [ ] ACPI Tables
     - [x] RSDP
     - [x] RSDT/XSDT
-    - [ ] MADT
+    - [x] MADT
     - [ ] FADT
 - [ ] APIC IO
 - [ ] Timer
