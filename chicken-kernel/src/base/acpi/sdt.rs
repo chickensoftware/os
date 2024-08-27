@@ -2,7 +2,6 @@ use core::ptr::read_unaligned;
 use chicken_util::memory::{MemoryMap, MemoryType, PhysicalAddress};
 use crate::base::acpi::ACPIError;
 use crate::memory::get_virtual_offset;
-use crate::println;
 
 const XSDT_SIGNATURE: [char; 4] = ['X', 'S', 'D', 'T'];
 
@@ -38,22 +37,15 @@ pub fn get_xsdt(xsdt_header_address: PhysicalAddress, memory_map: &MemoryMap) ->
 pub fn get(signature: [char; 4], xsdt_header_address: u64, memory_map: &MemoryMap) -> Result<*const SDTHeader, ACPIError> {
     let xsdt = get_xsdt(xsdt_header_address, memory_map)?;
     let xsdt_header_address = (xsdt_header_address + get_virtual_offset(MemoryType::AcpiData, memory_map).ok_or(ACPIError::InvalidMemoryMap)?) as *const u8;
-    println!("got xsdt, getting sigature: {:?}", signature);
     // amount of remaining u64 pointers to the other tables that fit into the total size of the XSDT
     let entries = (xsdt.length as usize - size_of::<SDTHeader>()) / 8;
-    println!("entries: {}", entries);
 
     let pointer_base = unsafe { xsdt_header_address.add(size_of::<SDTHeader>()) };
-    println!("pointer base: {:?}", pointer_base);
     for i in 0..entries {
         let entry_ptr = unsafe { read_unaligned(pointer_base.add(i * 8) as *const u64) };
-        println!("entry pointer old: {:#x}", entry_ptr);
 
         let entry_ptr = (entry_ptr + get_virtual_offset(MemoryType::AcpiData, memory_map).ok_or(ACPIError::InvalidMemoryMap)?) as *const SDTHeader;
-        println!("entry pointer new: {:?}", entry_ptr);
         let sdt_header = unsafe { &*entry_ptr };
-        println!("found header: {:?}", sdt_header);
-
 
         let mut sdt_header_signature: [char; 4] = [0u8 as char; 4];
 
@@ -62,7 +54,6 @@ pub fn get(signature: [char; 4], xsdt_header_address: u64, memory_map: &MemoryMa
         }
 
         if signature == sdt_header_signature {
-            println!("success");
             return Ok(sdt_header);
         }
     }

@@ -1,4 +1,7 @@
+#![allow(dead_code)] // keeping all variants of MADT entries, for possible use in the future.
 use bitflags::bitflags;
+
+use chicken_util::memory::VirtualAddress;
 
 /// Marker trait for MADT entries
 pub(in crate::base) trait MadtEntry {
@@ -24,6 +27,13 @@ pub(in crate::base) struct IOApic {
     io_apic_address: u32,
     /// Global system interrupt number where this IO Apic's interrupts start
     global_system_interrupt_base: u32,
+}
+
+impl IOApic {
+    /// Returns the physical of the IO APIC.
+    pub(in crate::base) fn io_apic_address(&self) -> VirtualAddress {
+        self.io_apic_address as u64
+    }
 }
 
 impl MadtEntry for IOApic {
@@ -59,10 +69,20 @@ pub(in crate::base) struct InterruptSourceOverride {
     bus: u8,
     /// Bus relative interrupt source (IRQ)
     source: u8,
-    /// ## The Global System Interrupt ##
-    ///that this bus-relative interrupt source will signal
+    /// The Global System Interrupt that this bus-relative interrupt source will signal
     global_system_interrupt: u32,
     flags: MpsInitFlags,
+}
+
+impl InterruptSourceOverride {
+    /// Returns IRQ of ISO
+    pub(in crate::base) fn source(&self) -> u8 {
+        self.source
+    }
+    /// Returns global_system_interrupt of ISO.
+    pub(in crate::base) fn gsi(&self) -> u32 {
+        self.global_system_interrupt
+    }
 }
 
 impl MadtEntry for InterruptSourceOverride {
@@ -81,11 +101,9 @@ pub(in crate::base) struct LApicNmi {
     lint: u8,
 }
 
-
 impl MadtEntry for LApicNmi {
     const ENTRY_TYPE: u8 = 4;
 }
-
 
 bitflags! {
     /// ## Multi-Processor Specification Interrupt Type Information Flags ##
@@ -112,4 +130,3 @@ bitflags! {
         const TRIGGER_LEVEL = 0b11 << 2;
     }
 }
-

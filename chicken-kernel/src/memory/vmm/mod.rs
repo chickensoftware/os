@@ -18,20 +18,19 @@ use crate::{
         paging::{PagingError, PTM},
         vmm::object::{VmFlags, VmObject},
     },
-    scheduling::spin::SpinLock,
+    scheduling::spin::{Guard, SpinLock},
 };
-use crate::scheduling::spin::Guard;
 
 pub(in crate::memory) const VIRTUAL_VMM_BASE: u64 = 0xFFFF_FFFF_C000_0000;
 /// Maximum amount of pages allowed for vmm objects' memory
 pub(in crate::memory) const VMM_PAGE_COUNT: usize = 0x4000; // 64 MiB
 
-pub(in crate::memory) mod object;
+pub(crate) mod object;
 
-pub(in crate::memory) static VMM: GlobalVirtualMemoryManager = GlobalVirtualMemoryManager::new();
+pub(crate) static VMM: GlobalVirtualMemoryManager = GlobalVirtualMemoryManager::new();
 
 #[derive(Debug)]
-pub(in crate::memory) struct GlobalVirtualMemoryManager {
+pub(crate) struct GlobalVirtualMemoryManager {
     inner: SpinLock<OnceCell<VirtualMemoryManager>>,
 }
 
@@ -50,16 +49,15 @@ impl GlobalVirtualMemoryManager {
         vmm.get_or_init(|| VirtualMemoryManager::new(vmm_start, vmm_page_count));
     }
 
-    pub(super) fn lock(&self) -> Guard<OnceCell<VirtualMemoryManager>> {
+    pub(crate) fn lock(&self) -> Guard<OnceCell<VirtualMemoryManager>> {
         self.inner.lock()
     }
-
 }
 
 #[allow(dead_code)] // otherwise, clippy complains about the flags field being 'unused'
 /// Uses global page table manager and kernel heap to keep track of allocated virtual memory objects with specific permissions.
 #[derive(Debug)]
-pub(super) struct VirtualMemoryManager {
+pub(crate) struct VirtualMemoryManager {
     head: Option<NonNull<VmObject>>,
     vmm_start: VirtualAddress,
     vmm_page_count: usize,
@@ -79,7 +77,7 @@ impl VirtualMemoryManager {
 
 impl VirtualMemoryManager {
     /// Allocates a new virtual memory object according to the given arguments, returns either a virtual address pointing to the object or a PagingError in case of an invalid length or allocation type.
-    pub(in crate::memory) fn alloc(
+    pub(crate) fn alloc(
         &mut self,
         length: usize,
         flags: VmFlags,
@@ -148,6 +146,7 @@ impl VirtualMemoryManager {
             // map pages for newly allocated vm object
             let page_count = length / PAGE_SIZE;
             self.pages_allocated += page_count;
+            // immediate backing
             for page in 0..page_count {
                 let physical_address = match allocation_type {
                     AllocationType::AnyPages => ptm.pmm().request_page().map_err(VmmError::from)?,
@@ -160,7 +159,6 @@ impl VirtualMemoryManager {
                     PageEntryFlags::from(flags),
                 )
                 .map_err(VmmError::from)?;
-
                 // clear newly allocated region
                 if !flags.contains(VmFlags::MMIO) && flags.contains(VmFlags::WRITE) {
                     unsafe {
@@ -177,7 +175,7 @@ impl VirtualMemoryManager {
         }
     }
 
-    pub(in crate::memory) fn free(&mut self, address: VirtualAddress) -> Result<(), VmmError> {
+    pub(crate) fn free(&mut self, address: VirtualAddress) -> Result<(), VmmError> {
         assert!(address >= self.vmm_start, "Invalid VMM object address");
         let mut ptm = PTM.lock();
         if let Some(ptm) = ptm.get_mut() {
@@ -245,25 +243,28 @@ impl VirtualMemoryManager {
 
 /// Specifies the type of allocation for the virtual memory object
 #[derive(Copy, Clone, Debug)]
-pub(in crate::memory) enum AllocationType {
+pub(crate) enum AllocationType {
     AnyPages,
     Address(VirtualAddress),
 }
 
 #[derive(Copy, Clone)]
-pub(in crate::memory) enum VmmError {
+pub(crate) enum VmmError {
     PageTableManagerError(PagingError),
     PageFrameAllocatorError(PageFrameAllocatorError),
     RequestedVmObjectIsNotAllocated(VirtualAddress),
     OutOfMemory,
-    GlobalVirtualMemoryManagerUninitialized
+    GlobalVirtualMemoryManagerUninitialized,
 }
 
 impl Debug for VmmError {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         match self {
             VmmError::OutOfMemory => write!(f, "VmmError: Out of memory."),
-            VmmError::GlobalVirtualMemoryManagerUninitialized => write!(f, "VmmError: Global virtual memory manager has not been initialized."),
+            VmmError::GlobalVirtualMemoryManagerUninitialized => write!(
+                f,
+                "VmmError: Global virtual memory manager has not been initialized."
+            ),
             VmmError::PageTableManagerError(value) => {
                 write!(f, "VmmError: {}.", value)
             }

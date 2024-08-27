@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 
-#[macro_use]
 extern crate alloc;
 
 use core::{arch::asm, panic::PanicInfo};
@@ -17,11 +16,11 @@ mod video;
 
 #[no_mangle]
 pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
-    let boot_info = memory::setup(boot_info);
-    video::setup(&boot_info);
+    let boot_info = memory::set_up(boot_info);
+    video::set_up(&boot_info);
     println!("kernel: Memory Management has been set up successfully.");
     println!("kernel: Video output has been set up successfully.");
-    base::setup(&boot_info);
+    base::set_up(&boot_info);
     println!("kernel: Base Architecture has been set up successfully.");
 
     println!("It did not crash.");

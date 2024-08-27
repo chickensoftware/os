@@ -19,10 +19,10 @@ use crate::memory::{
 pub(in crate::memory) mod paging;
 
 mod kheap;
-mod vmm;
+pub(crate) mod vmm;
 
 /// Sets up memory management and returns Boot info with proper virtual address pointers
-pub(super) fn setup(boot_info: &BootInfo) -> BootInfo {
+pub(super) fn set_up(boot_info: &BootInfo) -> BootInfo {
     // get physical memory manager
     let pmm = unsafe { (boot_info.pmm_address as *const PageFrameAllocator).read() };
 

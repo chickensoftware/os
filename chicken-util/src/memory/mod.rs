@@ -71,5 +71,5 @@ pub enum MemoryType {
     /// boot info, memory map
     KernelData = 4,
     /// acpi tables
-    AcpiData
+    AcpiData,
 }

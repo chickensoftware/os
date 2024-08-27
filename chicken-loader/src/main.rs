@@ -16,14 +16,12 @@ use uefi::{
 };
 
 use chicken_util::{
-    BootInfo, graphics::font::Font, memory::paging::KERNEL_MAPPING_OFFSET, PAGE_SIZE,
+    BootInfo,
+    graphics::font::Font,
+    memory::{paging::KERNEL_MAPPING_OFFSET, pmm::PageFrameAllocator}, PAGE_SIZE,
 };
-use chicken_util::memory::pmm::PageFrameAllocator;
 
-use crate::memory::{
-    allocate_boot_info, allocate_kernel_stack,
-    KernelInfo, set_up_address_space,
-};
+use crate::memory::{allocate_boot_info, allocate_kernel_stack, KernelInfo, set_up_address_space};
 
 mod file;
 mod graphics;
@@ -78,7 +76,7 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
             "boot: Allocating memory for kernel stack ({} MB)",
             KERNEL_STACK_SIZE / (1024 * 1024)
         )
-            .as_str(),
+        .as_str(),
         stdout
     );
 
@@ -144,7 +142,8 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
     let address_space_info = set_up_address_space(&mmap, kernel_info);
 
     // note: validate is no longer available after switching to graphics mode
-    let (pml4_address, virtual_rsp, kernel_boot_info_virtual_address, pmm) = address_space_info.unwrap();
+    let (pml4_address, virtual_rsp, kernel_boot_info_virtual_address, pmm) =
+        address_space_info.unwrap();
 
     let boot_info = unsafe { &mut *(kernel_boot_info_addr as *mut BootInfo) };
     boot_info.memory_map = mmap;
@@ -204,11 +203,12 @@ fn drop_boot_services(
 
         if descriptor.phys_start != 0x0
             && matches!(
-        descriptor.ty,
-        MemoryType::CONVENTIONAL
-            | MemoryType::BOOT_SERVICES_CODE
-            | MemoryType::BOOT_SERVICES_DATA
-    ) {
+                descriptor.ty,
+                MemoryType::CONVENTIONAL
+                    | MemoryType::BOOT_SERVICES_CODE
+                    | MemoryType::BOOT_SERVICES_DATA
+            )
+        {
             if descriptor.phys_start < first_available_addr {
                 first_available_addr = descriptor.phys_start;
             }
@@ -226,11 +226,18 @@ fn drop_boot_services(
         }
         // mark kernel file as kernel code
         else if descriptor.phys_start <= kernel_info.kernel_code_address
-            && phys_end >= kernel_info.kernel_code_address + (kernel_info.kernel_code_page_count * PAGE_SIZE) as u64 {
+            && phys_end
+                >= kernel_info.kernel_code_address
+                    + (kernel_info.kernel_code_page_count * PAGE_SIZE) as u64
+        {
             ChickenMemoryType::KernelCode
         }
         // mark stack as kernel stack
-        else if descriptor.phys_start <= kernel_info.kernel_stack_address && phys_end >= kernel_info.kernel_stack_address + (kernel_info.kernel_stack_page_count * PAGE_SIZE) as u64 {
+        else if descriptor.phys_start <= kernel_info.kernel_stack_address
+            && phys_end
+                >= kernel_info.kernel_stack_address
+                    + (kernel_info.kernel_stack_page_count * PAGE_SIZE) as u64
+        {
             ChickenMemoryType::KernelStack
         } else {
             // Determine the core memory type based on the UEFI memory type
@@ -283,7 +290,6 @@ fn print_chicken(stdout: &mut Output) {
     println!("   _|_", stdout);
     println!(stdout);
 }
-
 
 #[macro_export]
 macro_rules! println {

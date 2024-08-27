@@ -1,15 +1,15 @@
+use core::fmt;
+
+pub(in crate::base) mod madt;
 pub(in crate::base) mod rsd;
 pub(in crate::base) mod sdt;
-pub(in crate::base) mod madt;
-
-use core::fmt;
 
 #[derive(Copy, Clone)]
 pub enum ACPIError {
     InvalidRSDAddress,
     InvalidXSDTAddress,
     TableNotFound([char; 4]),
-    InvalidMemoryMap
+    InvalidMemoryMap,
 }
 
 impl fmt::Debug for ACPIError {

@@ -177,6 +177,12 @@ section .text
         jmp interrupt_stub
 
     ; vector number 15 is reserved
+    align 16
+    vector_15_handler:
+        push 0
+        ; vector number
+        push 15
+        jmp interrupt_stub
 
     ; x87 fpu floating-point error (math fault) (has no error code)
     align 16
@@ -220,7 +226,6 @@ section .text
         push 20
         jmp interrupt_stub
 
-
     ; control protection exception (has error code)
     align 16
     vector_21_handler:
@@ -229,5 +234,88 @@ section .text
         jmp interrupt_stub
 
     ; vector numbers 22-31 are reserved
+    align 16
+    vector_22_handler:
+        push 0
+        ; vector number
+        push 22
+        jmp interrupt_stub
+
+    align 16
+    vector_23_handler:
+        push 0
+        ; vector number
+        push 23
+        jmp interrupt_stub
+
+    align 16
+    vector_24_handler:
+        push 0
+        ; vector number
+        push 24
+        jmp interrupt_stub
+
+    align 16
+    vector_25_handler:
+        push 0
+        ; vector number
+        push 25
+        jmp interrupt_stub
+
+    align 16
+    vector_26_handler:
+        push 0
+        ; vector number
+        push 26
+        jmp interrupt_stub
+
+    align 16
+    vector_27_handler:
+        push 0
+        ; vector number
+        push 27
+        jmp interrupt_stub
+
+    align 16
+    vector_28_handler:
+        push 0
+        ; vector number
+        push 28
+        jmp interrupt_stub
+
+    align 16
+    vector_29_handler:
+        push 0
+        ; vector number
+        push 29
+        jmp interrupt_stub
+
+    align 16
+    vector_30_handler:
+        push 0
+        ; vector number
+        push 30
+        jmp interrupt_stub
+
+    align 16
+    vector_31_handler:
+        push 0
+        ; vector number
+        push 31
+        jmp interrupt_stub
 
     ; user defined vector numbers: (32-255)
+
+    align 16
+    vector_32_handler:
+        push 0
+        ; vector number
+        push 32
+        jmp interrupt_stub
+
+    align 16
+    vector_33_handler:
+        push 0
+        ; vector number
+        push 33
+        jmp interrupt_stub

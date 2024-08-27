@@ -47,7 +47,7 @@ make usb USB_DEVICE=/dev/<device> release=true
     - [x] RSDT/XSDT
     - [x] MADT
     - [ ] FADT
-- [ ] APIC IO
+- [x] APIC IO
 - [ ] Timer
 - [ ] Keyboard support
 

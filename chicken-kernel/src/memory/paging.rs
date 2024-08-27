@@ -20,7 +20,7 @@ use chicken_util::{
 };
 
 use crate::{
-    base::msr::Efer,
+    base::msr::{Efer, ModelSpecificRegister},
     scheduling::spin::{Guard, SpinLock},
 };
 
@@ -97,7 +97,8 @@ pub(super) fn setup<'a>(
     let mut manager: PageTableManager = PageTableManager::new(pml4_table, frame_allocator);
 
     let smallest_kernel_stack_addr = smallest_address(&[MemoryType::KernelStack], &memory_map)?;
-    let smallest_kernel_data_addr = smallest_address(&[MemoryType::KernelData, MemoryType::AcpiData], &memory_map)?;
+    let smallest_kernel_data_addr =
+        smallest_address(&[MemoryType::KernelData, MemoryType::AcpiData], &memory_map)?;
 
     memory_map.descriptors().iter().try_for_each(|desc| {
         let (virtual_base, physical_base, page_entry_flags) = match desc.r#type {
@@ -126,15 +127,13 @@ pub(super) fn setup<'a>(
             MemoryType::AcpiData => (
                 VIRTUAL_DATA_BASE,
                 desc.phys_start - smallest_kernel_data_addr,
-                // note: leaving it as default_nx for now. May be set to PRESENT only later
-                PageEntryFlags::default_nx()
-            )
+                PageEntryFlags::PRESENT,
+            ),
         };
 
         for page in 0..desc.num_pages {
             let physical_address = desc.phys_start + page * PAGE_SIZE as u64;
             let virtual_address = virtual_base + physical_base + page * PAGE_SIZE as u64;
-
             manager
                 .map_memory(virtual_address, physical_address, page_entry_flags)
                 .map_err(PagingError::from)?;
@@ -194,7 +193,7 @@ pub(super) fn enable(pml4_address: PhysicalAddress) {
 }
 
 #[derive(Copy, Clone)]
-pub(in crate::memory) enum PagingError {
+pub(crate) enum PagingError {
     PhysicalAllocationFailed(PageFrameAllocatorError),
     Pml4PointerMisaligned,
     InvalidMemoryMap,
@@ -236,7 +235,10 @@ impl From<PageFrameAllocatorError> for PagingError {
 }
 
 /// Returns the smallest physical address that matches the given descriptor type(s) or an error, if the memory map is invalid and does not contain any descriptors matching the specified type(s).
-pub(super) fn smallest_address(match_memory_types: &[MemoryType], memory_map: &MemoryMap) -> Result<PhysicalAddress, PagingError> {
+pub(super) fn smallest_address(
+    match_memory_types: &[MemoryType],
+    memory_map: &MemoryMap,
+) -> Result<PhysicalAddress, PagingError> {
     memory_map
         .descriptors()
         .iter()

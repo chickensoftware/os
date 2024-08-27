@@ -41,7 +41,7 @@ impl VmObject {
 
 bitflags! {
     #[derive(Copy, Clone, Debug)]
-    pub(in crate::memory) struct VmFlags: u8 {
+    pub(crate) struct VmFlags: u8 {
         /// If set, the object can be written to
         const WRITE = 1 << 0;
         /// If set, the object can be executed

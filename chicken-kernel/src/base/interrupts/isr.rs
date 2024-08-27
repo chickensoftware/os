@@ -1,7 +1,7 @@
 use core::arch::asm;
 
 use crate::{
-    base::interrupts::{idt::InterruptDescriptorTable, CpuState},
+    base::interrupts::{CpuState, idt::InterruptDescriptorTable},
     println,
 };
 
@@ -25,6 +25,7 @@ impl InterruptDescriptorTable {
 
 #[no_mangle]
 pub fn interrupt_dispatch(state_ptr: *const CpuState) -> *const CpuState {
+    // todo: handle hardware interrupts and send eoi afterward.
     let state = unsafe { *state_ptr };
     match state.vector_number {
         0 => {
