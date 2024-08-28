@@ -10,10 +10,14 @@ use crate::{
     base::io::apic::ioapic,
     memory::vmm::{AllocationType, object::VmFlags, VMM, VmmError},
 };
+use crate::base::io::timer::pit::{PIT, ProgrammableIntervalTimer};
+use crate::base::io::timer::Timer;
 
 pub(in crate::base) mod apic;
-mod pic;
 pub(in crate::base) mod keyboard;
+pub(in crate::base) mod timer;
+
+mod pic;
 
 pub(super) fn initialize(boot_info: &BootInfo) {
     // remap and disable pics, so they don't influence apic.
@@ -34,8 +38,8 @@ pub(super) fn initialize(boot_info: &BootInfo) {
         )
         .unwrap();
 
-    // reconfigure entry for keyboard input
     unsafe {
+        // reconfigure entry for keyboard input
         ioapic::configure_redirection_entry(
             io_apic_virtual_address,
             apic_config.keyboard_source,
@@ -43,6 +47,19 @@ pub(super) fn initialize(boot_info: &BootInfo) {
             apic_config.lapic_id,
             true,
         );
+
+        // reconfigure entry for pit timer ticks
+        ioapic::configure_redirection_entry(
+            io_apic_virtual_address,
+            apic_config.pit_source,
+            0x20,
+            apic_config.lapic_id,
+            true,
+        );
+
+        // enable PIT
+        let mut binding = PIT.lock();
+        binding.set_frequency(ProgrammableIntervalTimer::BASE_FREQUENCY / ProgrammableIntervalTimer::MAX_DIVISOR as u64);
     }
 }
 

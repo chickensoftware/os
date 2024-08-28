@@ -36,7 +36,7 @@ pub(super) fn set_up(boot_info: &BootInfo) -> Result<ApicConfig, IOError> {
         .map(|iso| iso.gsi() as u8)
         .unwrap_or(KEYBOARD_IRQ);
 
-    let _timer_source = overrides
+    let pit_source = overrides
         .iter()
         .find(|iso| iso.source() == TIMER_IRQ)
         .map(|iso| iso.gsi() as u8)
@@ -53,7 +53,7 @@ pub(super) fn set_up(boot_info: &BootInfo) -> Result<ApicConfig, IOError> {
         io_apic_address,
         lapic_id,
         keyboard_source,
-        _timer_source,
+        pit_source,
     })
 }
 #[derive(Debug)]
@@ -65,5 +65,5 @@ pub(super) struct ApicConfig {
     /// Either the default [`KEYBOARD_IRQ`] or a source override specified in the MADT.
     pub(super) keyboard_source: u8,
     /// Either the default [`TIMER_IRQ`] or a source override specified in the MADT.
-    pub(super) _timer_source: u8,
+    pub(super) pit_source: u8,
 }

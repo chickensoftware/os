@@ -7,6 +7,8 @@ use crate::{
 use crate::base::io;
 use crate::base::io::inb;
 use crate::base::io::keyboard::KEYBOARD;
+use crate::base::io::timer::pit::PIT;
+use crate::base::io::timer::Timer;
 
 extern "C" {
     fn vector_0_handler();
@@ -47,16 +49,8 @@ pub fn interrupt_dispatch(state_ptr: *const CpuState) -> *const CpuState {
             }
             println!("Faulting page address: {:#x}", cr2);
         },
-        33 => {
-            // parse keyboard scancode from port 0x60
-            let scancode = unsafe { inb(0x60) };
-
-            let mut binding = KEYBOARD.lock();
-            binding.handle(scancode);
-
-            // send end of interrupt signal to lapic that sent the interrupt
-            io::apic::lapic::eoi();
-        }
+        32 => pit_handler(),
+        33 => keyboard_handler(),
         _ => {
             println!(
                 "Interrupt handler has not been set up. vector: {:#x}, error code (if set): {:?}",
@@ -67,6 +61,25 @@ pub fn interrupt_dispatch(state_ptr: *const CpuState) -> *const CpuState {
     }
     state_ptr
 }
+
+fn keyboard_handler() {
+    // parse keyboard scancode from port 0x60
+    let scancode = unsafe { inb(0x60) };
+
+    let mut binding = KEYBOARD.lock();
+    binding.handle(scancode);
+
+    // send end of interrupt signal to lapic that sent the interrupt
+    io::apic::lapic::eoi();
+}
+
+fn pit_handler() {
+    let binding = PIT.lock();
+    binding.tick();
+    // send end of interrupt signal to lapic that sent the interrupt
+    io::apic::lapic::eoi();
+}
+
 mod error_code {
     use bitflags::bitflags;
 

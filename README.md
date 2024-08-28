@@ -48,7 +48,8 @@ make usb USB_DEVICE=/dev/<device> release=true
     - [x] MADT
     - [ ] FADT
 - [x] APIC IO
-- [ ] Timer
+- [x] Timer
+    - [x] Programmable Interval Timer
 - [ ] Keyboard support
     - [x] Receive Scancodes
     - [x] Basic Keyboard Driver
