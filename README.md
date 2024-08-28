@@ -74,7 +74,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [x] Global Writer
 
 ### Scheduling
-- [ ] Scheduler
+- [x] Scheduler
 - [ ] Processes
 - [ ] Threads
 - [x] Spin Lock

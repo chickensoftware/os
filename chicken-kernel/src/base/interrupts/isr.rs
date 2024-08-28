@@ -1,14 +1,14 @@
 use core::arch::asm;
-
-use crate::{
-    base::interrupts::{CpuState, idt::InterruptDescriptorTable},
-    println,
-};
-use crate::base::io;
-use crate::base::io::inb;
-use crate::base::io::keyboard::KEYBOARD;
-use crate::base::io::timer::pit::PIT;
-use crate::base::io::timer::Timer;
+use crate::{base::{
+    interrupts::{CpuState, idt::InterruptDescriptorTable},
+    io,
+    io::{
+        inb,
+        keyboard::KEYBOARD,
+        timer::{pit::PIT, Timer},
+    },
+}, println};
+use crate::base::interrupts::without_interrupts;
 
 extern "C" {
     fn vector_0_handler();
@@ -29,7 +29,7 @@ impl InterruptDescriptorTable {
 }
 
 #[no_mangle]
-pub fn interrupt_dispatch(state_ptr: *const CpuState) -> *const CpuState {
+pub fn interrupt_dispatch(mut state_ptr: *const CpuState) -> *const CpuState {
     // todo: handle hardware interrupts and send eoi afterward.
     let state = unsafe { *state_ptr };
     match state.vector_number {
@@ -48,8 +48,10 @@ pub fn interrupt_dispatch(state_ptr: *const CpuState) -> *const CpuState {
                 asm!("mov {}, cr2", out(reg) cr2);
             }
             println!("Faulting page address: {:#x}", cr2);
-        },
-        32 => pit_handler(),
+        }
+        32 => {
+            state_ptr = pit_handler(state_ptr);
+        }
         33 => keyboard_handler(),
         _ => {
             println!(
@@ -73,11 +75,16 @@ fn keyboard_handler() {
     io::apic::lapic::eoi();
 }
 
-fn pit_handler() {
-    let binding = PIT.lock();
-    binding.tick();
-    // send end of interrupt signal to lapic that sent the interrupt
-    io::apic::lapic::eoi();
+fn pit_handler(context: *const CpuState) -> *const CpuState {
+    without_interrupts(|| {
+        let binding = PIT.lock();
+        let context = binding.perform_context_switch(context);
+
+        // send end of interrupt signal to lapic that sent the interrupt
+        io::apic::lapic::eoi();
+
+        context
+    })
 }
 
 mod error_code {

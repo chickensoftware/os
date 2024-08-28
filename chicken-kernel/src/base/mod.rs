@@ -19,6 +19,4 @@ pub(super) fn set_up(boot_info: &BootInfo) {
     println!("kernel: Set up idt.");
     io::initialize(boot_info);
     println!("kernel: Set up io, pit frequency: {}.", PIT.lock().frequency());
-    interrupts::enable();
-    println!("kernel: Enabled interrupts.");
 }

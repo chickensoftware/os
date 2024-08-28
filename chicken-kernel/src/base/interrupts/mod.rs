@@ -86,7 +86,7 @@ where
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
-struct CpuState {
+pub(crate) struct CpuState {
     r15: u64,
     r14: u64,
     r13: u64,
