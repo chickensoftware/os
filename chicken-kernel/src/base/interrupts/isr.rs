@@ -4,6 +4,8 @@ use crate::{
     base::interrupts::{CpuState, idt::InterruptDescriptorTable},
     println,
 };
+use crate::base::io;
+use crate::base::io::inb;
 
 extern "C" {
     fn vector_0_handler();
@@ -43,6 +45,14 @@ pub fn interrupt_dispatch(state_ptr: *const CpuState) -> *const CpuState {
                 asm!("mov {}, cr2", out(reg) cr2);
             }
             println!("Faulting page address: {:#x}", cr2);
+        },
+        33 => {
+            // parse keyboard scancode from port 0x60
+            let scancode = unsafe { inb(0x60) };
+            println!("{:#x}", scancode);
+
+            // send end of interrupt signal to lapic that sent the interrupt
+            io::apic::lapic::eoi();
         }
         _ => {
             println!(

@@ -1,7 +1,12 @@
+use core::sync::atomic::Ordering;
 use chicken_util::{memory::VirtualAddress, PAGE_SIZE};
 
 use crate::{
-    base::{io::IOError, msr, msr::ModelSpecificRegister},
+    base::{
+        io::{apic::EOI_POINTER, IOError},
+        msr,
+        msr::ModelSpecificRegister,
+    },
     memory::vmm::{AllocationType, object::VmFlags, VMM, VmmError},
 };
 
@@ -23,6 +28,7 @@ impl LocalApicControl {
             .address();
 
         // allocate apic control registers as MMIO
+        // this is never freed, since the mapping is necessary for the interrupt handlers of the LAPIC as well.
         let mut vmm = VMM.lock();
         if let Some(vmm) = vmm.get_mut() {
             let virtual_address = vmm.alloc(
@@ -55,22 +61,27 @@ impl LocalApicControl {
         }
     }
 
-    /// Send the lapic the signal that an interrupt has been handled.
-    pub(in crate::base) fn eoi(&mut self) {
-        unsafe {
-            // mmio to register has already been mapped in enable function.
-            let eoi_register = (self.lapic_address as *mut u8).add(EOI_OFFSET) as *mut u32;
-            // signal end of interrupt
-            eoi_register.write_volatile(0);
-        }
+    pub(super) fn eoi_pointer(&self) -> *mut u32 {
+        unsafe { (self.lapic_address as *mut u8).add(EOI_OFFSET) as *mut u32 }
     }
 
     /// Returns the ID of the local apic.
     ///
     pub(in crate::base::io::apic) fn lapic_id(&self) -> u8 {
-       unsafe {
-           let id_reigster = (self.lapic_address as *const u8).add(LOCAL_APIC_ID_OFFSET);
-           *id_reigster
-       }
+        unsafe {
+            let id_reigster = (self.lapic_address as *const u8).add(LOCAL_APIC_ID_OFFSET);
+            *id_reigster
+        }
+    }
+}
+
+/// Send the lapic the signal that an interrupt has been handled. Only sends the signal if the EOI_POINTER has been initialized
+pub(in crate::base) fn eoi() {
+    let eoi = EOI_POINTER.load(Ordering::Relaxed);
+    if !eoi.is_null() {
+        unsafe {
+            // signal end of interrupt
+            eoi.write_volatile(0);
+        }
     }
 }

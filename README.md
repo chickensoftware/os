@@ -50,6 +50,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [x] APIC IO
 - [ ] Timer
 - [ ] Keyboard support
+    - [x] Receive Scancodes
 
 ### Memory Management
 - [x] Custom Memory Map

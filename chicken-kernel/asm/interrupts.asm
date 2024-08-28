@@ -52,6 +52,7 @@ section .text
 
         iretq
 
+; todo: refactor interrupt handling
 
     ; predefined vector numbers: (0-21)
     global vector_0_handler

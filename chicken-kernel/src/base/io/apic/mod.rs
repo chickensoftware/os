@@ -1,36 +1,32 @@
-use core::cell::OnceCell;
+use core::sync::atomic::{AtomicPtr, Ordering};
 
 use chicken_util::BootInfo;
 
-use crate::{
-    base::{
-        acpi::madt::{
-            entry::{InterruptSourceOverride, IOApic},
-            Madt,
-        },
-        io::{
-            apic::{
-                ioapic::{KEYBOARD_IRQ, TIMER_IRQ},
-                lapic::LocalApicControl,
-            },
-            IOError,
-        },
+use crate::base::{
+    acpi::madt::{
+        entry::{InterruptSourceOverride, IOApic},
+        Madt,
     },
-    scheduling::spin::SpinLock,
+    io::{
+        apic::{
+            ioapic::{KEYBOARD_IRQ, TIMER_IRQ},
+            lapic::LocalApicControl,
+        },
+        IOError,
+    },
 };
 
-pub(in crate::base)  static LAPIC_CONTROL: SpinLock<OnceCell<LocalApicControl>> =
-    SpinLock::new(OnceCell::new());
-
 pub(super) mod ioapic;
-mod lapic;
+pub(in crate::base) mod lapic;
+
+static EOI_POINTER: AtomicPtr<u32> = AtomicPtr::new(0 as *mut u32);
 
 /// Configures APIC and LAPIC of BSP. Also sets up memory mappings for LAPIC registers MMIO.
 pub(super) fn set_up(boot_info: &BootInfo) -> Result<ApicConfig, IOError> {
     let lapic = LocalApicControl::enable()?;
 
-    let binding = LAPIC_CONTROL.lock();
-    let lapic = binding.get_or_init(|| lapic);
+    // store address in atomic pointer
+    EOI_POINTER.store(lapic.eoi_pointer(), Ordering::Relaxed);
 
     let madt = unsafe { Madt::get(boot_info).as_ref().ok_or(IOError::MadtNotFound)? };
     let overrides = madt.parse_entries::<InterruptSourceOverride>();
