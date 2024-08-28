@@ -13,6 +13,7 @@ use crate::{
 
 pub(in crate::base) mod apic;
 mod pic;
+pub(in crate::base) mod keyboard;
 
 pub(super) fn initialize(boot_info: &BootInfo) {
     // remap and disable pics, so they don't influence apic.

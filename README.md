@@ -51,6 +51,8 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [ ] Timer
 - [ ] Keyboard support
     - [x] Receive Scancodes
+    - [x] Basic Keyboard Driver
+    - [ ] Proper Keyboard Driver  
 
 ### Memory Management
 - [x] Custom Memory Map

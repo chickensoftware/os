@@ -6,6 +6,7 @@ use crate::{
 };
 use crate::base::io;
 use crate::base::io::inb;
+use crate::base::io::keyboard::KEYBOARD;
 
 extern "C" {
     fn vector_0_handler();
@@ -49,7 +50,9 @@ pub fn interrupt_dispatch(state_ptr: *const CpuState) -> *const CpuState {
         33 => {
             // parse keyboard scancode from port 0x60
             let scancode = unsafe { inb(0x60) };
-            println!("{:#x}", scancode);
+
+            let mut binding = KEYBOARD.lock();
+            binding.handle(scancode);
 
             // send end of interrupt signal to lapic that sent the interrupt
             io::apic::lapic::eoi();
