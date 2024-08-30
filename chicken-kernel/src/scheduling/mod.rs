@@ -20,7 +20,7 @@ use crate::{
         paging::{PagingError, PTM},
         vmm::{VMM, VmmError},
     },
-    println,
+    print, println,
     scheduling::{
         spin::{Guard, SpinLock},
         task::process::{Process, TaskStatus},
@@ -60,7 +60,7 @@ impl GlobalTaskScheduler {
         self.inner.lock()
     }
 
-    /// Mark currently active task as dead.
+    /// Mark currently active thread as dead.
     fn kill_active() {
         // loop in case of interrupt during function call
         loop {
@@ -68,7 +68,7 @@ impl GlobalTaskScheduler {
                 let mut binding = SCHEDULER.lock();
                 if let Some(scheduler) = binding.get_mut() {
                     let active = unsafe { scheduler.active_task.unwrap().as_mut() };
-                    active.status = TaskStatus::Dead;
+                    active.active_thread().status = TaskStatus::Dead;
                 }
             });
         }
@@ -93,18 +93,47 @@ impl TaskScheduler {
 
         instance.add_task("IDLE".to_string(), idle)?;
         instance.add_task("TEST".to_string(), test)?;
+        instance.add_task("A".to_string(), a)?;
 
         Ok(instance)
     }
 }
 
 fn idle() {
+    println!("idle");
     hlt_loop();
 }
 
 fn test() {
     println!("Test task called!");
+    GlobalTaskScheduler::kill_active();
+}
 
+fn a() {
+    without_interrupts(|| {
+        let mut binding = SCHEDULER.lock();
+        if let Some(scheduler) = binding.get_mut() {
+            let active = unsafe { scheduler.active_task.unwrap().as_mut() };
+            active.add_thread("B".to_string(), b).unwrap();
+            active.add_thread("C".to_string(), c).unwrap();
+        }
+    });
+
+    GlobalTaskScheduler::kill_active();
+}
+
+fn b() {
+    for _ in 0..500 {
+        print!("B");
+    }
+
+    GlobalTaskScheduler::kill_active();
+}
+
+fn c() {
+    for _ in 0..500 {
+        print!("C");
+    }
     GlobalTaskScheduler::kill_active();
 }
 
@@ -112,80 +141,54 @@ impl TaskScheduler {
     pub(crate) fn schedule(&mut self, context: *const CpuState) -> *const CpuState {
         if let Some(mut active_task) = self.active_task {
             let active_task = unsafe { active_task.as_mut() };
+            let mut next_active_thread = active_task.active_thread().next;
+            let mut dead = true;
 
-            // remove dead tasks from the list and get next active task
-            let mut next_active_task = if active_task.next.is_some() {
-                active_task.next
-            } else {
-                self.head
-            };
+            if next_active_thread.is_none() {
+                next_active_thread = active_task.main_thread
+            }
 
-            while let Some(current_task) = next_active_task {
-                let current_ref = unsafe { current_task.as_ref() };
-                // could not find valid task
-                if current_ref.pid == active_task.pid {
+            let active_tid = active_task.active_thread().tid;
+
+            // iterate through each thread of the current process
+            while let Some(mut current_thread) = next_active_thread {
+                let thread_ref = unsafe { current_thread.as_mut() };
+
+                if thread_ref.status != TaskStatus::Dead {
+                    dead = false;
+                }
+
+                if thread_ref.tid == active_tid {
                     break;
                 }
 
-                match current_ref.status {
-                    // found valid next task
-                    TaskStatus::Ready => break,
-                    // remove dead task
-                    TaskStatus::Dead => self.remove_task(current_ref.pid).unwrap(),
-                    TaskStatus::Running => {}
+                if thread_ref.status == TaskStatus::Ready {
+                    let active_thread_ref = active_task.active_thread();
+                    // save state of previous active thread
+                    if active_thread_ref.status != TaskStatus::Dead {
+                        active_thread_ref.context = context;
+                        active_thread_ref.status = TaskStatus::Ready;
+                    }
+                    // switch to the next thread in the current process
+                    active_task.active_thread = Some(current_thread);
+                    thread_ref.status = TaskStatus::Running;
+
+                    return thread_ref.context;
                 }
 
-                // round-robin
-                if current_ref.next.is_some() {
-                    next_active_task = current_ref.next;
+                next_active_thread = if thread_ref.next.is_some() {
+                    thread_ref.next
                 } else {
-                    next_active_task = self.head;
-                }
+                    active_task.main_thread
+                };
             }
 
-            // set up new next task and remove old one if it's dead
-            if let Some(mut next_active_task) = next_active_task {
-                let next_active_task_ref = unsafe { next_active_task.as_mut() };
-
-                // save currently active state if task is not dead
-                if active_task.status != TaskStatus::Dead {
-                    active_task.status = TaskStatus::Ready;
-                    active_task.context = context;
-                }
-
-                // update new active task
-                next_active_task_ref.status = TaskStatus::Running;
-                self.active_task = Some(next_active_task);
-
-                // switch to other paging scheme
-                // todo: maybe issue with expanding kernel heap in one process and making it smaller in other process?
-                let mut binding = PTM.lock();
-                assert!(
-                    binding.get().is_some(),
-                    "PTM must be set up when calling scheduler."
-                );
-                let new_mappings = binding
-                    .get()
-                    .unwrap()
-                    .get_physical(next_active_task_ref.page_table_mappings as VirtualAddress);
-                assert!(
-                    new_mappings.is_some(),
-                    "Page table mappings of each process must be set up."
-                );
-                let new_mappings = new_mappings.unwrap();
-                unsafe {
-                    paging::enable(new_mappings);
-                }
-                let ptm = binding.get_mut().unwrap();
-                unsafe {
-                    ptm.update_pml4(new_mappings);
-                }
-                PTM.unlock();
-
-                next_active_task_ref.context
-            } else {
-                context
+            if dead {
+                active_task.status = TaskStatus::Dead;
             }
+
+            // no threads are ready in the current process
+            self.switch_processes(active_task, context)
         } else {
             // first time context switch is called. start with IDLE task
             let idle = self.head;
@@ -193,10 +196,98 @@ impl TaskScheduler {
             let idle_ref = unsafe { idle.unwrap().as_mut() };
             idle_ref.status = TaskStatus::Running;
 
+            idle_ref.active_thread = idle_ref.main_thread;
+            idle_ref.active_thread().status = TaskStatus::Running;
+
             self.active_task = idle;
 
-            idle_ref.context
+            idle_ref.active_thread().context
         }
+    }
+
+    fn switch_processes(
+        &mut self,
+        active_task: &mut Process,
+        context: *const CpuState,
+    ) -> *const CpuState {
+        let next_active_task = self.get_next_process(active_task);
+
+        // set up new next task and remove old one if it's dead
+        if let Some(mut next_active_task) = next_active_task {
+            let next_active_task_ref = unsafe { next_active_task.as_mut() };
+
+            // save currently active state if task is not dead
+            if active_task.status != TaskStatus::Dead {
+                active_task.status = TaskStatus::Ready;
+                active_task.active_thread().context = context;
+            }
+
+            // update new active task
+            next_active_task_ref.status = TaskStatus::Running;
+            self.active_task = Some(next_active_task);
+
+            // switch to other paging scheme
+            // todo: maybe issue with expanding kernel heap in one process and making it smaller in other process?
+            let mut binding = PTM.lock();
+            assert!(
+                binding.get().is_some(),
+                "PTM must be set up when calling scheduler."
+            );
+            let new_mappings = binding
+                .get()
+                .unwrap()
+                .get_physical(next_active_task_ref.page_table_mappings as VirtualAddress);
+            assert!(
+                new_mappings.is_some(),
+                "Page table mappings of each process must be set up."
+            );
+            let new_mappings = new_mappings.unwrap();
+            unsafe {
+                paging::enable(new_mappings);
+            }
+            let ptm = binding.get_mut().unwrap();
+            unsafe {
+                ptm.update_pml4(new_mappings);
+            }
+            PTM.unlock();
+
+            next_active_task_ref.active_thread().context
+        } else {
+            context
+        }
+    }
+
+    fn get_next_process(&mut self, active_task: &mut Process) -> Option<NonNull<Process>> {
+        // remove dead tasks from the list and get next active task
+        let mut next_active_task = if active_task.next.is_some() {
+            active_task.next
+        } else {
+            self.head
+        };
+
+        while let Some(current_task) = next_active_task {
+            let current_ref = unsafe { current_task.as_ref() };
+            // could not find valid task
+            if current_ref.pid == active_task.pid {
+                break;
+            }
+            match current_ref.status {
+                // found valid next task
+                TaskStatus::Ready => break,
+                // remove dead task
+                TaskStatus::Dead => self.remove_task(current_ref.pid).unwrap(),
+                TaskStatus::Running => {}
+            }
+
+            // round-robin
+            if current_ref.next.is_some() {
+                next_active_task = current_ref.next;
+            } else {
+                next_active_task = self.head;
+            }
+        }
+
+        next_active_task
     }
 }
 
@@ -238,6 +329,11 @@ impl TaskScheduler {
             id,
             "Active task must not be removed while still active."
         );
+        assert_ne!(
+            unsafe { self.head.unwrap().as_ref().pid },
+            id,
+            "Idle task must not be removed."
+        );
 
         let mut current = self.head;
         while let Some(mut current_task) = current {
@@ -251,6 +347,7 @@ impl TaskScheduler {
                     prev_ref.next = current_ref.next;
                     heap_ptr
                 } else {
+                    // will never happen, since the idle task cannot be removed.
                     let heap_ptr = self.head.unwrap().as_ptr();
                     self.head = current_ref.next;
 
@@ -262,7 +359,16 @@ impl TaskScheduler {
                     next_ref.prev = current_ref.prev;
                 }
 
-                // deallocate task
+                // remove all threads of the process
+                let mut current_thread = current_ref.main_thread;
+
+                while let Some(mut thread) = current_thread {
+                    let thread_ref = unsafe { thread.as_mut() };
+                    current_ref.remove_thread(thread_ref.tid, true)?;
+                    current_thread = thread_ref.next;
+                }
+
+                // deallocate the process
                 unsafe {
                     dealloc(heap_ptr as *mut u8, Layout::new::<Process>());
                 }
@@ -274,11 +380,7 @@ impl TaskScheduler {
                         VmmError::GlobalVirtualMemoryManagerUninitialized,
                     ))?;
 
-                // free process's stack
-                let stack_address = current_ref.stack_start;
-                vmm.free(stack_address).map_err(SchedulerError::from)?;
-
-                // free process's page tables
+                // free the process's page tables
                 let pml4_address = current_ref.page_table_mappings as u64;
                 vmm.free(pml4_address).map_err(SchedulerError::from)?;
 
@@ -294,6 +396,7 @@ impl TaskScheduler {
 #[derive(Copy, Clone)]
 pub(crate) enum SchedulerError {
     TaskNotFound(u64),
+    ThreadNotFound(u64, u64),
     MemoryAllocationError(VmmError),
     PageTableManagerError(PagingError),
 }
@@ -305,6 +408,11 @@ impl Debug for SchedulerError {
                 f,
                 "Scheduler Error: Could not find task with ID: {} in task list.",
                 id
+            ),
+            SchedulerError::ThreadNotFound(pid, tid) => write!(
+                f,
+                "Scheduler Error: Could not find thread with TID: {} in task: PID: {}.",
+                tid, pid
             ),
             SchedulerError::MemoryAllocationError(value) => {
                 write!(f, "Scheduler Error: Memory allocation failed: {}", value)
