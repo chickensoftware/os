@@ -1,7 +1,5 @@
 use alloc::{
     alloc::dealloc,
-    borrow::ToOwned
-    ,
     string::{String, ToString},
 };
 use core::{
@@ -20,9 +18,9 @@ use crate::{
     memory::{
         paging,
         paging::{PagingError, PTM},
-        vmm::VmmError,
-    }
-    , println,
+        vmm::{VMM, VmmError},
+    },
+    println,
     scheduling::{
         spin::{Guard, SpinLock},
         task::process::{Process, TaskStatus},
@@ -128,9 +126,13 @@ impl TaskScheduler {
                 if current_ref.pid == active_task.pid {
                     break;
                 }
-                // found valid next task
-                if current_ref.status == TaskStatus::Ready {
-                    break;
+
+                match current_ref.status {
+                    // found valid next task
+                    TaskStatus::Ready => break,
+                    // remove dead task
+                    TaskStatus::Dead => self.remove_task(current_ref.pid).unwrap(),
+                    TaskStatus::Running => {}
                 }
 
                 // round-robin
@@ -144,10 +146,9 @@ impl TaskScheduler {
             // set up new next task and remove old one if it's dead
             if let Some(mut next_active_task) = next_active_task {
                 let next_active_task_ref = unsafe { next_active_task.as_mut() };
-                // save currently active state if task is not dead or remove it otherwise
-                if active_task.status == TaskStatus::Dead {
-                    self.remove_task(active_task.pid).unwrap();
-                } else {
+
+                // save currently active state if task is not dead
+                if active_task.status != TaskStatus::Dead {
                     active_task.status = TaskStatus::Ready;
                     active_task.context = context;
                 }
@@ -232,6 +233,11 @@ impl TaskScheduler {
     fn remove_task(&mut self, id: u64) -> Result<(), SchedulerError> {
         let active_task = self.active_task;
         assert!(active_task.is_some(), "Active task must be present.");
+        assert_ne!(
+            unsafe { active_task.unwrap().as_ref().pid },
+            id,
+            "Active task must not be removed while still active."
+        );
 
         let mut current = self.head;
         while let Some(mut current_task) = current {
@@ -260,6 +266,21 @@ impl TaskScheduler {
                 unsafe {
                     dealloc(heap_ptr as *mut u8, Layout::new::<Process>());
                 }
+
+                let mut binding = VMM.lock();
+                let vmm = binding
+                    .get_mut()
+                    .ok_or(SchedulerError::MemoryAllocationError(
+                        VmmError::GlobalVirtualMemoryManagerUninitialized,
+                    ))?;
+
+                // free process's stack
+                let stack_address = current_ref.stack_start;
+                vmm.free(stack_address).map_err(SchedulerError::from)?;
+
+                // free process's page tables
+                let pml4_address = current_ref.page_table_mappings as u64;
+                vmm.free(pml4_address).map_err(SchedulerError::from)?;
 
                 return Ok(());
             }

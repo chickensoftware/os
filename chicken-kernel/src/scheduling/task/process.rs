@@ -27,6 +27,7 @@ pub(crate) struct Process {
     pub(in crate::scheduling) context: *const CpuState,
     pub(in crate::scheduling) pid: u64,
     pub(in crate::scheduling) page_table_mappings: *const PageTable,
+    pub(in crate::scheduling) stack_start: VirtualAddress,
     pub(in crate::scheduling) name: Option<String>,
     pub(in crate::scheduling) next: Option<NonNull<Process>>,
     pub(in crate::scheduling) prev: Option<NonNull<Process>>,
@@ -41,7 +42,7 @@ impl Process {
         pid: u64,
     ) -> Result<Option<NonNull<Self>>, SchedulerError> {
         // set up new cpu state
-        let rsp = allocate_stack()?;
+        let (stack_start, rsp) = allocate_stack()?;
         let cpu_state = Box::into_raw(Box::new(CpuState::basic(
             KERNEL_DS as u64,
             rsp,
@@ -63,6 +64,7 @@ impl Process {
         process_ref.status = TaskStatus::Ready;
         process_ref.page_table_mappings = pml4;
         process_ref.context = cpu_state;
+        process_ref.stack_start = stack_start;
         Ok(process)
     }
 
@@ -74,19 +76,20 @@ impl Process {
             prev: None,
             pid: 0,
             page_table_mappings: ptr::null_mut(),
+            stack_start: 0,
             name: None,
         }
     }
 }
 
-/// Allocate a stack of [`PROCESS_STACK_SIZE`] for a new process. Returns the pointer to the top of the stack or an error value. The caller is responsible fpr freeing the memory allocated.
-fn allocate_stack() -> Result<VirtualAddress, SchedulerError> {
+/// Allocate a stack of [`PROCESS_STACK_SIZE`] for a new process. Returns the pointer to the stack bottom and the top of the stack or an error value. The caller is responsible fpr freeing the memory allocated.
+fn allocate_stack() -> Result<(VirtualAddress, VirtualAddress), SchedulerError> {
     let mut binding = VMM.lock();
     if let Some(vmm) = binding.get_mut() {
         let stack_bottom = vmm
             .alloc(PROCESS_STACK_SIZE, VmFlags::WRITE, AllocationType::AnyPages)
             .map_err(SchedulerError::from)?;
-        Ok(stack_bottom + PROCESS_STACK_SIZE as u64 - 1)
+        Ok((stack_bottom, stack_bottom + PROCESS_STACK_SIZE as u64 - 1))
     } else {
         Err(SchedulerError::MemoryAllocationError(
             VmmError::GlobalVirtualMemoryManagerUninitialized,
