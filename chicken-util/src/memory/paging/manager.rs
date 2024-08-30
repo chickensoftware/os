@@ -33,11 +33,24 @@ impl<'a> PageTableManager<'a> {
         &mut self.page_frame_allocator
     }
 
-    /// Returns pointer to root page table.
-    pub fn pml4(&self) -> *mut PageTable {
+    /// Returns pointer to root page table physical address.
+    pub fn pml4_physical(&self) -> *mut PageTable {
         self.page_map_level4
     }
 
+    /// Returns pointer to root page table virtual address.
+    pub fn pml4_virtual(&self) -> *mut PageTable {
+        (self.page_map_level4 as u64 + self.offset) as *mut PageTable
+    }
+
+
+    /// Used to switch to a different page table mapping.
+    ///
+    /// # Safety
+    /// The caller must ensure that the new address is valid.
+    pub unsafe fn update_pml4(&mut self, new_address: VirtualAddress) {
+        self.page_map_level4 = new_address as *mut PageTable;
+    }
     /// Used to make page table manager accessible after enabling direct mapping paging scheme with offset. Updates page table manager to use offset when traversing page tables.
     ///
     /// # Safety
@@ -100,7 +113,7 @@ impl<'a> PageTableManager<'a> {
     /// # Safety
     ///
     /// The caller has to ensure that the address is the appropriate one and no longer mapped.
-    unsafe fn invalidate_tlb_entry(&self, virtual_address: VirtualAddress) {
+    pub unsafe fn invalidate_tlb_entry(&self, virtual_address: VirtualAddress) {
         asm!("invlpg [{}]", in(reg) virtual_address as *const u8);
     }
 

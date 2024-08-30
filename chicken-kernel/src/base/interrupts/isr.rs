@@ -30,7 +30,6 @@ impl InterruptDescriptorTable {
 
 #[no_mangle]
 pub fn interrupt_dispatch(mut state_ptr: *const CpuState) -> *const CpuState {
-    // todo: handle hardware interrupts and send eoi afterward.
     let state = unsafe { *state_ptr };
     match state.vector_number {
         0 => {
@@ -61,6 +60,7 @@ pub fn interrupt_dispatch(mut state_ptr: *const CpuState) -> *const CpuState {
             )
         }
     }
+
     state_ptr
 }
 
@@ -79,10 +79,8 @@ fn pit_handler(context: *const CpuState) -> *const CpuState {
     without_interrupts(|| {
         let binding = PIT.lock();
         let context = binding.perform_context_switch(context);
-
         // send end of interrupt signal to lapic that sent the interrupt
         io::apic::lapic::eoi();
-
         context
     })
 }

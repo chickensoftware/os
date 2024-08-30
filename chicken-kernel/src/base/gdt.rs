@@ -4,7 +4,9 @@ use bitflags::bitflags;
 
 use crate::scheduling::spin::SpinLock;
 
-pub(crate) const CS: u16 = 0x08;
+pub(crate) const KERNEL_CS: u16 = 0x08;
+// note: data segments is also used for stack allocation of new kernel processes.
+pub(crate) const KERNEL_DS: u16 = 0x10;
 
 static GDT: SpinLock<OnceCell<GlobalDescriptorTable>> = SpinLock::new(OnceCell::new());
 

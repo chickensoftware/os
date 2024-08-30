@@ -25,8 +25,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     scheduling::set_up();
     println!("kernel: Scheduler set up.");
     base::interrupts::enable();
-    println!("kernel: Enabled interrupts.");
-    println!("It did not crash.");
+    // is never reached, because task scheduler starts when interrupts are enabled.
     hlt_loop();
 }
 

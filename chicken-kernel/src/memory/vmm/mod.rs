@@ -23,7 +23,7 @@ use crate::{
 
 pub(in crate::memory) const VIRTUAL_VMM_BASE: u64 = 0xFFFF_FFFF_C000_0000;
 /// Maximum amount of pages allowed for vmm objects' memory
-pub(in crate::memory) const VMM_PAGE_COUNT: usize = 0x4000; // 64 MiB
+pub(in crate::memory) const VMM_PAGE_COUNT: usize = PAGE_SIZE * 256; // 1 MiB
 
 pub(crate) mod object;
 
@@ -162,7 +162,7 @@ impl VirtualMemoryManager {
                 // clear newly allocated region
                 if !flags.contains(VmFlags::MMIO) && flags.contains(VmFlags::WRITE) {
                     unsafe {
-                        (virtual_address as *mut u8).write_bytes(0, length);
+                        (virtual_address as *mut u8).write_bytes(0, PAGE_SIZE);
                     }
                 }
             }

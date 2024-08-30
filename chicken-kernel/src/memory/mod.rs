@@ -16,7 +16,7 @@ use crate::memory::{
     },
 };
 
-pub(in crate::memory) mod paging;
+pub(crate) mod paging;
 
 mod kheap;
 pub(crate) mod vmm;
@@ -28,7 +28,7 @@ pub(super) fn set_up(boot_info: &BootInfo) -> BootInfo {
 
     // set up paging
     let (manager, mut boot_info) = paging::setup(pmm, boot_info).unwrap();
-    let pml4 = manager.pml4() as u64;
+    let pml4 = manager.pml4_physical() as u64;
 
     // switch to new paging scheme
     paging::enable(pml4);
