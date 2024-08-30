@@ -75,7 +75,8 @@ make usb USB_DEVICE=/dev/<device> release=true
 
 ### Scheduling
 - [x] Scheduler
-- [ ] Processes
+- [x] Processes
+- [ ] Resources
 - [ ] Threads
 - [x] Spin Lock
 
