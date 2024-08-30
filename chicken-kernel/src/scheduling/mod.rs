@@ -1,5 +1,7 @@
 use alloc::{
     alloc::dealloc,
+    borrow::ToOwned
+    ,
     string::{String, ToString},
 };
 use core::{
@@ -19,8 +21,8 @@ use crate::{
         paging,
         paging::{PagingError, PTM},
         vmm::VmmError,
-    },
-    print,
+    }
+    , println,
     scheduling::{
         spin::{Guard, SpinLock},
         task::process::{Process, TaskStatus},
@@ -43,12 +45,14 @@ pub(crate) struct GlobalTaskScheduler {
 unsafe impl Sync for GlobalTaskScheduler {}
 
 impl GlobalTaskScheduler {
+    /// Create new empty Global Task Scheduler instance.
     const fn new() -> Self {
         Self {
             inner: SpinLock::new(OnceCell::new()),
         }
     }
 
+    /// Initialize Global Task Scheduler.
     pub(super) fn init() {
         let scheduler = SCHEDULER.inner.lock();
         scheduler.get_or_init(|| TaskScheduler::try_new().unwrap());
@@ -56,6 +60,20 @@ impl GlobalTaskScheduler {
 
     pub(crate) fn lock(&self) -> Guard<OnceCell<TaskScheduler>> {
         self.inner.lock()
+    }
+
+    /// Mark currently active task as dead.
+    fn kill_active() {
+        // loop in case of interrupt during function call
+        loop {
+            without_interrupts(|| {
+                let mut binding = SCHEDULER.lock();
+                if let Some(scheduler) = binding.get_mut() {
+                    let active = unsafe { scheduler.active_task.unwrap().as_mut() };
+                    active.status = TaskStatus::Dead;
+                }
+            });
+        }
     }
 }
 
@@ -87,13 +105,12 @@ fn idle() {
 }
 
 fn test() {
-    loop {
-        without_interrupts(|| print!("B"));
-    }
+    println!("Test task called!");
+
+    GlobalTaskScheduler::kill_active();
 }
 
 impl TaskScheduler {
-    // todo: implement ability to mark tasks as DEAD
     pub(crate) fn schedule(&mut self, context: *const CpuState) -> *const CpuState {
         if let Some(mut active_task) = self.active_task {
             let active_task = unsafe { active_task.as_mut() };
@@ -111,16 +128,12 @@ impl TaskScheduler {
                 if current_ref.pid == active_task.pid {
                     break;
                 }
-
-                match current_ref.status {
-                    // found valid next task
-                    TaskStatus::Ready => break,
-                    // remove dead tasks
-                    TaskStatus::Dead => self.remove_task(current_ref.pid).unwrap(),
-                    // should never happen
-                    TaskStatus::Running => {}
+                // found valid next task
+                if current_ref.status == TaskStatus::Ready {
+                    break;
                 }
 
+                // round-robin
                 if current_ref.next.is_some() {
                     next_active_task = current_ref.next;
                 } else {
@@ -128,17 +141,23 @@ impl TaskScheduler {
                 }
             }
 
+            // set up new next task and remove old one if it's dead
             if let Some(mut next_active_task) = next_active_task {
                 let next_active_task_ref = unsafe { next_active_task.as_mut() };
-                // save currently active state
-                active_task.status = TaskStatus::Ready;
-                active_task.context = context;
+                // save currently active state if task is not dead or remove it otherwise
+                if active_task.status == TaskStatus::Dead {
+                    self.remove_task(active_task.pid).unwrap();
+                } else {
+                    active_task.status = TaskStatus::Ready;
+                    active_task.context = context;
+                }
 
+                // update new active task
                 next_active_task_ref.status = TaskStatus::Running;
-
                 self.active_task = Some(next_active_task);
 
                 // switch to other paging scheme
+                // todo: maybe issue with expanding kernel heap in one process and making it smaller in other process?
                 let mut binding = PTM.lock();
                 assert!(
                     binding.get().is_some(),
@@ -153,7 +172,9 @@ impl TaskScheduler {
                     "Page table mappings of each process must be set up."
                 );
                 let new_mappings = new_mappings.unwrap();
-                unsafe { paging::enable(new_mappings); }
+                unsafe {
+                    paging::enable(new_mappings);
+                }
                 let ptm = binding.get_mut().unwrap();
                 unsafe {
                     ptm.update_pml4(new_mappings);
@@ -211,12 +232,6 @@ impl TaskScheduler {
     fn remove_task(&mut self, id: u64) -> Result<(), SchedulerError> {
         let active_task = self.active_task;
         assert!(active_task.is_some(), "Active task must be present.");
-
-        assert_ne!(
-            id,
-            unsafe { active_task.unwrap().as_ref().pid },
-            "Active task must not be removed."
-        );
 
         let mut current = self.head;
         while let Some(mut current_task) = current {
