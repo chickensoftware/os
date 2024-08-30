@@ -8,7 +8,10 @@ use core::{alloc::Layout, ptr, ptr::NonNull};
 
 use qemu_print::qemu_println;
 
-use chicken_util::{memory::paging::PageTable, PAGE_SIZE};
+use chicken_util::{
+    memory::paging::PageTable,
+    PAGE_SIZE,
+};
 
 use crate::{
     memory::{
@@ -22,6 +25,8 @@ const MAIN_THREAD_NAME: &str = "MAIN-";
 #[derive(Debug)]
 pub(crate) struct Process {
     pub(in crate::scheduling) page_table_mappings: *const PageTable,
+    // whether the kernel page mappings should be copied when switching from one process to another. For now always true.
+    pub(in crate::scheduling) update_kernel_mappings: bool,
 
     pub(in crate::scheduling) thread_id_counter: u64,
     pub(in crate::scheduling) main_thread: Option<NonNull<Thread>>,
@@ -73,6 +78,9 @@ impl Process {
             active_thread: None,
             name: "".to_string(),
             main_thread: None,
+            // always update higher half mappings when switching processes
+            // note: may be exchanged by a more efficient approach, that only updates the mappings if necessary, in the future.
+            update_kernel_mappings: true,
         }
     }
 }
@@ -182,13 +190,36 @@ impl Process {
     }
 }
 
+/// Copies higher half mappings from one page-table manager to another.
+///
+/// # Safety
+/// The caller must ensure that both addresses are mapped and point to valid page tables.
+pub(in crate::scheduling) unsafe fn copy_higher_half_mappings(
+    src_pml4: *mut PageTable,
+    dst_pml4: *mut PageTable,
+) -> Result<(), SchedulerError> {
+    let src = src_pml4
+        .as_mut()
+        .ok_or(SchedulerError::PageTableManagerError(
+            PagingError::Pml4PointerMisaligned,
+        ))?;
+    let dst = dst_pml4
+        .as_mut()
+        .ok_or(SchedulerError::PageTableManagerError(
+            PagingError::Pml4PointerMisaligned,
+        ))?;
+
+    dst.entries.copy_from_slice(src.entries.as_slice());
+    Ok(())
+}
+
 /// Allocate new page table mappings. Copies the higher half mappings from the global page table manager. Returns the address to the new pml4 table or an error value. The caller is responsible fpr freeing the memory allocated.
 fn allocate_page_mappings() -> Result<*const PageTable, SchedulerError> {
     // get page table size
-    let current_mapping = {
+    let current_pml4 = {
         let mut binding = PTM.lock();
         if let Some(ptm) = binding.get_mut() {
-            Ok(unsafe { ptm.pml4_virtual().read().entries })
+            Ok(ptm.pml4_virtual())
         } else {
             Err(SchedulerError::PageTableManagerError(
                 PagingError::GlobalPageTableManagerUninitialized,
@@ -198,12 +229,11 @@ fn allocate_page_mappings() -> Result<*const PageTable, SchedulerError> {
 
     let mut binding = VMM.lock();
     if let Some(vmm) = binding.get_mut() {
-        let new_pml4_address = vmm.alloc(PAGE_SIZE, VmFlags::WRITE, AllocationType::AnyPages)?;
-        let new_pml4 = unsafe { (new_pml4_address as *mut PageTable).as_mut().unwrap() };
+        let new_pml4 =
+            vmm.alloc(PAGE_SIZE, VmFlags::WRITE, AllocationType::AnyPages)? as *mut PageTable;
 
-        new_pml4.entries[256..512].copy_from_slice(&current_mapping[256..512]);
-
-        Ok(new_pml4_address as *const PageTable)
+        unsafe { copy_higher_half_mappings(current_pml4, new_pml4)?; }
+        Ok(new_pml4)
     } else {
         Err(SchedulerError::MemoryAllocationError(
             VmmError::GlobalVirtualMemoryManagerUninitialized,

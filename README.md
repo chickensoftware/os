@@ -78,6 +78,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [x] Processes
 - [ ] Resources
 - [x] Threads
+- [ ] Thread API
 - [x] Spin Lock
 
 ### Userspace

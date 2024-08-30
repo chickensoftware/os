@@ -10,6 +10,7 @@ use core::{
     ptr::NonNull,
 };
 
+use chicken_util::memory::paging::PageTable;
 use chicken_util::memory::VirtualAddress;
 
 use crate::{
@@ -26,6 +27,7 @@ use crate::{
         task::process::{Process, TaskStatus},
     },
 };
+use crate::scheduling::task::process::copy_higher_half_mappings;
 
 pub(crate) mod spin;
 mod task;
@@ -233,15 +235,23 @@ impl TaskScheduler {
                 binding.get().is_some(),
                 "PTM must be set up when calling scheduler."
             );
-            let new_mappings = binding
-                .get()
-                .unwrap()
-                .get_physical(next_active_task_ref.page_table_mappings as VirtualAddress);
+            let manager = binding
+                .get_mut()
+                .unwrap();
+
+            // copy higher half page tables if kernel mappings have been changed by current process
+            if active_task.update_kernel_mappings {
+                unsafe {
+                    copy_higher_half_mappings(manager.pml4_virtual(), next_active_task_ref.page_table_mappings as *mut PageTable).unwrap();
+                }
+            }
+            let new_mappings_address = manager.get_physical(next_active_task_ref.page_table_mappings as VirtualAddress);
+
             assert!(
-                new_mappings.is_some(),
+                new_mappings_address.is_some(),
                 "Page table mappings of each process must be set up."
             );
-            let new_mappings = new_mappings.unwrap();
+            let new_mappings = new_mappings_address.unwrap();
             unsafe {
                 paging::enable(new_mappings);
             }
