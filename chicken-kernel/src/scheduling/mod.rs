@@ -7,20 +7,26 @@ use core::{
     cell::OnceCell,
     error::Error,
     fmt::{Debug, Display, Formatter},
-    ptr::NonNull
-    ,
+    ptr::NonNull,
 };
 
+use chicken_util::memory::VirtualAddress;
+
 use crate::{
-    base::interrupts::CpuState,
-    memory::{paging::PagingError, vmm::VmmError},
+    base::interrupts::{CpuState, without_interrupts},
+    hlt_loop,
+    memory::{
+        paging,
+        paging::{PagingError, PTM},
+        vmm::VmmError,
+    },
     print,
     scheduling::{
         spin::{Guard, SpinLock},
         task::process::{Process, TaskStatus},
     },
 };
-use crate::base::interrupts::without_interrupts;
+
 pub(crate) mod spin;
 mod task;
 
@@ -77,9 +83,7 @@ impl TaskScheduler {
 }
 
 fn idle() {
-    loop {
-        without_interrupts(|| print!("A"));
-    }
+    hlt_loop();
 }
 
 fn test() {
@@ -89,17 +93,18 @@ fn test() {
 }
 
 impl TaskScheduler {
-    // todo:   * implement address space switch
-    //         * implement ability to mark tasks as DEAD
+    // todo: implement ability to mark tasks as DEAD
     pub(crate) fn schedule(&mut self, context: *const CpuState) -> *const CpuState {
         if let Some(mut active_task) = self.active_task {
             let active_task = unsafe { active_task.as_mut() };
+
             // remove dead tasks from the list and get next active task
             let mut next_active_task = if active_task.next.is_some() {
                 active_task.next
             } else {
                 self.head
             };
+
             while let Some(current_task) = next_active_task {
                 let current_ref = unsafe { current_task.as_ref() };
                 // could not find valid task
@@ -122,6 +127,7 @@ impl TaskScheduler {
                     next_active_task = self.head;
                 }
             }
+
             if let Some(mut next_active_task) = next_active_task {
                 let next_active_task_ref = unsafe { next_active_task.as_mut() };
                 // save currently active state
@@ -131,6 +137,28 @@ impl TaskScheduler {
                 next_active_task_ref.status = TaskStatus::Running;
 
                 self.active_task = Some(next_active_task);
+
+                // switch to other paging scheme
+                let mut binding = PTM.lock();
+                assert!(
+                    binding.get().is_some(),
+                    "PTM must be set up when calling scheduler."
+                );
+                let new_mappings = binding
+                    .get()
+                    .unwrap()
+                    .get_physical(next_active_task_ref.page_table_mappings as VirtualAddress);
+                assert!(
+                    new_mappings.is_some(),
+                    "Page table mappings of each process must be set up."
+                );
+                let new_mappings = new_mappings.unwrap();
+                unsafe { paging::enable(new_mappings); }
+                let ptm = binding.get_mut().unwrap();
+                unsafe {
+                    ptm.update_pml4(new_mappings);
+                }
+                PTM.unlock();
 
                 next_active_task_ref.context
             } else {

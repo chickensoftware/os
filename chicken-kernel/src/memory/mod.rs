@@ -31,7 +31,7 @@ pub(super) fn set_up(boot_info: &BootInfo) -> BootInfo {
     let pml4 = manager.pml4_physical() as u64;
 
     // switch to new paging scheme
-    paging::enable(pml4);
+    unsafe { paging::enable(pml4); }
 
     // initialize static global page table manager
     GlobalPageTableManager::init(manager);

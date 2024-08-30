@@ -43,6 +43,20 @@ impl<'a> PageTableManager<'a> {
         (self.page_map_level4 as u64 + self.offset) as *mut PageTable
     }
 
+    /// Returns the physical address associated with the provided virtual address. May return None if the mapping is not available.
+    pub fn get_physical(&self, virtual_address: VirtualAddress) -> Option<PhysicalAddress> {
+        let indexer = PageMapIndexer::new(virtual_address);
+        let page_map_level4 = (self.page_map_level4 as u64 + self.offset) as *mut PageTable;
+        // Map Level 3
+        let page_map_level3 = self.get_next_table(page_map_level4, indexer.pdp_i())?;
+        // Map Level 2
+        let page_map_level2 = self.get_next_table(page_map_level3, indexer.pd_i())?;
+        // Map Level 1
+        let page_map_level1 = self.get_next_table(page_map_level2, indexer.pt_i())?;
+
+        let page_entry = &mut unsafe { &mut *page_map_level1 }.entries[indexer.p_i() as usize];
+        Some(page_entry.address())
+    }
 
     /// Used to switch to a different page table mapping.
     ///
@@ -115,6 +129,15 @@ impl<'a> PageTableManager<'a> {
     /// The caller has to ensure that the address is the appropriate one and no longer mapped.
     pub unsafe fn invalidate_tlb_entry(&self, virtual_address: VirtualAddress) {
         asm!("invlpg [{}]", in(reg) virtual_address as *const u8);
+    }
+
+    fn get_next_table(&self, current_table: *mut PageTable, index: u64) -> Option<*mut PageTable> {
+        let entry = &mut unsafe { &mut *current_table }.entries[index as usize];
+        if entry.flags().contains(PageEntryFlags::PRESENT) {
+            Some((entry.address() + self.offset) as *mut PageTable)
+        } else {
+            None
+        }
     }
 
     /// Gets pointer to next table or creates it if it does not exist yet.

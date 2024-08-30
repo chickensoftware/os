@@ -50,6 +50,9 @@ impl GlobalPageTableManager {
     pub(crate) fn lock(&self) -> Guard<OnceCell<PageTableManager<'static>>> {
         self.inner.lock()
     }
+    pub(crate) fn unlock(&self) {
+        self.inner.unlock();
+    }
 }
 
 /// Function to set up custom paging scheme. Returns virtual address of page manager level 4 table. Also returns boot info with updated usable virtual addresses
@@ -186,10 +189,11 @@ pub(super) fn setup<'a>(
 }
 
 /// Switches to the new paging scheme specified by the pml4 address.
-pub(crate) fn enable(pml4_address: u64) {
-    unsafe {
+///
+/// # Safety
+/// The caller must ensure that the provided address is a valid physical address pointing to a page table.
+pub(crate) unsafe fn enable(pml4_address: PhysicalAddress) {
         asm!("mov cr3, {}", in(reg) pml4_address);
-    }
 }
 
 #[derive(Copy, Clone)]
