@@ -1,10 +1,12 @@
+use crate::base::interrupts::CpuState;
+
 pub(in crate::base) mod pit;
 // note: For now, only pit is supported; HPET, LAPIC may follow later.
 pub(in crate::base) trait Timer {
     const BASE_FREQUENCY: u64;
 
     /// Called when timer interrupt occurs.
-    fn tick(&self);
+    fn perform_context_switch(&self, context: *const CpuState) -> *const CpuState;
 
     /// Set frequency of timer. Also enables the timer, if it hasn't been enabled already.
     ///

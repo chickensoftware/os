@@ -1,6 +1,6 @@
 use core::cell::OnceCell;
 
-use crate::{base::gdt::CS, scheduling::spin::SpinLock};
+use crate::{base::gdt::KERNEL_CS, scheduling::spin::SpinLock};
 
 static IDT: SpinLock<OnceCell<InterruptDescriptorTable>> = SpinLock::new(OnceCell::new());
 
@@ -40,7 +40,7 @@ impl InterruptDescriptorTable {
     ) {
         self.0[vector as usize] = GateDescriptor::new(
             handler_address,
-            CS,
+            KERNEL_CS,
             ist,
             GateFlags::new(GateType::TrapGate, dpl, true),
         );

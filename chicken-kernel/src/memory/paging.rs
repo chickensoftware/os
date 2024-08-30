@@ -24,12 +24,12 @@ use crate::{
     scheduling::spin::{Guard, SpinLock},
 };
 
-pub(in crate::memory) static PTM: GlobalPageTableManager = GlobalPageTableManager::new();
+pub(crate) static PTM: GlobalPageTableManager = GlobalPageTableManager::new();
 
 pub(super) const VIRTUAL_PHYSICAL_BASE: u64 = 0xFFFF_8000_0000_0000;
 pub(super) const VIRTUAL_DATA_BASE: u64 = 0xFFFF_FFFF_7000_0000;
 #[derive(Debug)]
-pub(in crate::memory) struct GlobalPageTableManager {
+pub(crate) struct GlobalPageTableManager {
     inner: SpinLock<OnceCell<PageTableManager<'static>>>,
 }
 
@@ -47,8 +47,11 @@ impl GlobalPageTableManager {
         let ptm = PTM.inner.lock();
         ptm.get_or_init(|| page_table_manager);
     }
-    pub(in crate::memory) fn lock(&self) -> Guard<OnceCell<PageTableManager<'static>>> {
+    pub(crate) fn lock(&self) -> Guard<OnceCell<PageTableManager<'static>>> {
         self.inner.lock()
+    }
+    pub(crate) fn unlock(&self) {
+        self.inner.unlock();
     }
 }
 
@@ -185,11 +188,12 @@ pub(super) fn setup<'a>(
     Ok((manager, boot_info))
 }
 
-/// Note: technically this only switches to a custom page table, since paging has already been enabled by uefi.
-pub(super) fn enable(pml4_address: PhysicalAddress) {
-    unsafe {
+/// Switches to the new paging scheme specified by the pml4 address.
+///
+/// # Safety
+/// The caller must ensure that the provided address is a valid physical address pointing to a page table.
+pub(crate) unsafe fn enable(pml4_address: PhysicalAddress) {
         asm!("mov cr3, {}", in(reg) pml4_address);
-    }
 }
 
 #[derive(Copy, Clone)]

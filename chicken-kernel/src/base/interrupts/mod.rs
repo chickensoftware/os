@@ -12,7 +12,8 @@ bitflags! {
     #[derive(Copy, Clone, Debug)]
     pub(crate) struct RFlags : u64 {
         const CARRY = 1 << 0;
-        // bit 1 reserved
+        // bit 1 reserved and always set to 1
+        const RESERVED_1 = 1 << 1;
         const PARITY = 1 << 2;
         // bit 3 reserved
         const AUXILIARY_CARRY = 1 << 4;
@@ -86,7 +87,7 @@ where
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
-struct CpuState {
+pub(crate) struct CpuState {
     r15: u64,
     r14: u64,
     r13: u64,
@@ -111,4 +112,33 @@ struct CpuState {
     iretq_flags: RFlags,
     iretq_rsp: u64,
     iretq_ss: u64,
+}
+
+impl CpuState {
+    pub(crate) fn basic(iretq_ss: u64, iretq_rsp: u64, iretq_flags: RFlags, iretq_cs: u64, iretq_rip: u64, rbp: u64) -> Self {
+        Self {
+            r15: 0,
+            r14: 0,
+            r13: 0,
+            r12: 0,
+            r11: 0,
+            r10: 0,
+            r9: 0,
+            r8: 0,
+            rbp,
+            rdi: 0,
+            rsi: 0,
+            rdx: 0,
+            rcx: 0,
+            rbx: 0,
+            rax: 0,
+            vector_number: 0,
+            error_code: 0,
+            iretq_rip,
+            iretq_cs,
+            iretq_flags,
+            iretq_rsp,
+            iretq_ss,
+        }
+    }
 }

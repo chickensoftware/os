@@ -22,8 +22,10 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     println!("kernel: Video output has been set up successfully.");
     base::set_up(&boot_info);
     println!("kernel: Base Architecture has been set up successfully.");
-
-    println!("It did not crash.");
+    scheduling::set_up();
+    println!("kernel: Scheduler set up.");
+    base::interrupts::enable();
+    // is never reached, because task scheduler starts when interrupts are enabled.
     hlt_loop();
 }
 

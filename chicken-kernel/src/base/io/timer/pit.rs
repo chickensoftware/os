@@ -1,7 +1,10 @@
 use crate::{
-    base::io::{io_wait, outb, Port, timer::Timer},
-    print,
-    scheduling::spin::SpinLock,
+    base::{
+        interrupts::CpuState,
+        io::{io_wait, outb, Port, timer::Timer},
+    }
+    ,
+    scheduling::{SCHEDULER, spin::SpinLock},
 };
 
 const TICK_GENERATOR_PORT: Port = 0x40;
@@ -49,8 +52,13 @@ impl ProgrammableIntervalTimer {
 impl Timer for ProgrammableIntervalTimer {
     const BASE_FREQUENCY: u64 = 1193182;
 
-    fn tick(&self) {
-        print!(".");
+    fn perform_context_switch(&self, context: *const CpuState) -> *const CpuState {
+        let mut binding = SCHEDULER.lock();
+        if let Some(scheduler) = binding.get_mut() {
+            scheduler.schedule(context)
+        } else {
+            context
+        }
     }
 
     unsafe fn set_frequency(&mut self, frequency: u64) {
