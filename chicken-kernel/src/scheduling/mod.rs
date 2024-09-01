@@ -27,7 +27,7 @@ use crate::{
         task::process::{Process, TaskStatus},
     },
 };
-use crate::scheduling::task::process::copy_higher_half_mappings;
+use crate::scheduling::task::process::{copy_higher_half_mappings, NextThread};
 
 pub(crate) mod spin;
 mod task;
@@ -70,7 +70,7 @@ impl GlobalTaskScheduler {
                 let mut binding = SCHEDULER.lock();
                 if let Some(scheduler) = binding.get_mut() {
                     let active = unsafe { scheduler.active_task.unwrap().as_mut() };
-                    active.active_thread().status = TaskStatus::Dead;
+                    active.active_thread_mut().status = TaskStatus::Dead;
                 }
             });
         }
@@ -107,7 +107,9 @@ fn idle() {
 }
 
 fn test() {
-    println!("Test task called!");
+    for _ in 0..500 {
+        print!("A");
+    }
     GlobalTaskScheduler::kill_active();
 }
 
@@ -121,7 +123,9 @@ fn a() {
         }
     });
 
-    GlobalTaskScheduler::kill_active();
+    // thread joining has not been implemented, so all threads of the current process are killed, if the main thread ends.
+    hlt_loop();
+    // GlobalTaskScheduler::kill_active();
 }
 
 fn b() {
@@ -143,52 +147,39 @@ impl TaskScheduler {
     pub(crate) fn schedule(&mut self, context: *const CpuState) -> *const CpuState {
         if let Some(mut active_task) = self.active_task {
             let active_task = unsafe { active_task.as_mut() };
-            let mut next_active_thread = active_task.active_thread().next;
-            let mut dead = true;
+            match active_task.get_next_thread() {
+                // switch to next process
+                NextThread::None => {
+                    // store state of previously active thread
+                    active_task.active_thread_mut().status = TaskStatus::Ready;
+                    active_task.active_thread_mut().context = context;
 
-            if next_active_thread.is_none() {
-                next_active_thread = active_task.main_thread
-            }
-
-            let active_tid = active_task.active_thread().tid;
-
-            // iterate through each thread of the current process
-            while let Some(mut current_thread) = next_active_thread {
-                let thread_ref = unsafe { current_thread.as_mut() };
-
-                if thread_ref.status != TaskStatus::Dead {
-                    dead = false;
+                    // set active thread to main thread
+                    active_task.active_thread = active_task.main_thread;
                 }
+                // switch to next process
+                NextThread::TaskDead => {
 
-                if thread_ref.tid == active_tid {
-                    break;
+                    // mark task as dead, so it gets removed later.
+                    active_task.status = TaskStatus::Dead;
                 }
+                // execute next ready thread in current process
+                NextThread::Found(next_thread) => {
+                    // save state of previously active thread
+                    let active_thread = active_task.active_thread_mut();
 
-                if thread_ref.status == TaskStatus::Ready {
-                    let active_thread_ref = active_task.active_thread();
-                    // save state of previous active thread
-                    if active_thread_ref.status != TaskStatus::Dead {
-                        active_thread_ref.context = context;
-                        active_thread_ref.status = TaskStatus::Ready;
-                    }
-                    // switch to the next thread in the current process
-                    active_task.active_thread = Some(current_thread);
-                    thread_ref.status = TaskStatus::Running;
+                    active_thread.context = context;
+                    active_thread.status = TaskStatus::Ready;
 
-                    return thread_ref.context;
+                    // set active thread to found thread
+                    active_task.active_thread = next_thread;
+                    active_task.active_thread_mut().status = TaskStatus::Running;
+
+
+                    // return context of next thread
+                    return active_task.active_thread_ref().context;
                 }
-
-                next_active_thread = if thread_ref.next.is_some() {
-                    thread_ref.next
-                } else {
-                    active_task.main_thread
-                };
             }
-
-            if dead {
-                active_task.status = TaskStatus::Dead;
-            }
-
             // no threads are ready in the current process
             self.switch_processes(active_task, context)
         } else {
@@ -199,11 +190,11 @@ impl TaskScheduler {
             idle_ref.status = TaskStatus::Running;
 
             idle_ref.active_thread = idle_ref.main_thread;
-            idle_ref.active_thread().status = TaskStatus::Running;
+            idle_ref.active_thread_mut().status = TaskStatus::Running;
 
             self.active_task = idle;
 
-            idle_ref.active_thread().context
+            idle_ref.active_thread_mut().context
         }
     }
 
@@ -221,7 +212,7 @@ impl TaskScheduler {
             // save currently active state if task is not dead
             if active_task.status != TaskStatus::Dead {
                 active_task.status = TaskStatus::Ready;
-                active_task.active_thread().context = context;
+                active_task.active_thread_mut().context = context;
             }
 
             // update new active task
@@ -229,7 +220,6 @@ impl TaskScheduler {
             self.active_task = Some(next_active_task);
 
             // switch to other paging scheme
-            // todo: maybe issue with expanding kernel heap in one process and making it smaller in other process?
             let mut binding = PTM.lock();
             assert!(
                 binding.get().is_some(),
@@ -261,7 +251,7 @@ impl TaskScheduler {
             }
             PTM.unlock();
 
-            next_active_task_ref.active_thread().context
+            next_active_task_ref.active_thread_mut().context
         } else {
             context
         }

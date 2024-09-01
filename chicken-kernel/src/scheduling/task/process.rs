@@ -6,12 +6,7 @@ use alloc::{
 };
 use core::{alloc::Layout, ptr, ptr::NonNull};
 
-use qemu_print::qemu_println;
-
-use chicken_util::{
-    memory::paging::PageTable,
-    PAGE_SIZE,
-};
+use chicken_util::{memory::paging::PageTable, PAGE_SIZE};
 
 use crate::{
     memory::{
@@ -86,13 +81,13 @@ impl Process {
 }
 
 impl Process {
-    pub(crate) fn active_thread(&mut self) -> &mut Thread {
-        assert!(
-            self.active_thread.is_some(),
-            "Each task must have an active thread."
-        );
+    pub(crate) fn active_thread_mut(&mut self) -> &mut Thread {
         unsafe { self.active_thread.unwrap().as_mut() }
     }
+    pub(crate) fn active_thread_ref(&self) -> &Thread {
+        unsafe { self.active_thread.unwrap().as_ref() }
+    }
+
     pub(crate) fn add_thread(&mut self, name: String, entry: fn()) -> Result<(), SchedulerError> {
         let mut current = self.main_thread;
 
@@ -120,7 +115,6 @@ impl Process {
             }
             current = current_thread.next;
         }
-        qemu_println!("added thread: {}", name);
 
         Ok(())
     }
@@ -188,6 +182,66 @@ impl Process {
 
         Err(SchedulerError::ThreadNotFound(self.pid, tid))
     }
+
+    /// Gets the next ready thread information of the process. Returns whether the task has any alive threads, if all threads have been run for one iteration or the next ready thread.
+    pub(in crate::scheduling) fn get_next_thread(&self) -> NextThread {
+        // mark task as dead.
+        if self.is_dead() {
+            return NextThread::TaskDead;
+        }
+
+        let mut next_thread = self.active_thread_ref().next;
+        // get next thread that is ready
+        while let Some(thread) = next_thread {
+            let thread_ref = unsafe { thread.as_ref() };
+            if thread_ref.status == TaskStatus::Ready {
+                break;
+            }
+
+            next_thread = thread_ref.next;
+        }
+
+        // all threads of the current process have been run once, switch to the next process.
+        if next_thread.is_none() {
+            NextThread::None
+        }
+        // run the next thread in the current process.
+        else {
+            NextThread::Found(next_thread)
+        }
+    }
+}
+
+impl Process {
+    fn is_dead(&self) -> bool {
+        if self.status == TaskStatus::Dead {
+            return true;
+        }
+
+        assert!(
+            self.main_thread.is_some(),
+            "Each task must have a main thread."
+        );
+
+        // todo: add join-ability to threads, for now exit when main thread is dead
+        if unsafe { self.main_thread.unwrap().as_ref().status == TaskStatus::Dead } {
+            return true;
+        }
+
+        let mut dead = true;
+        let mut next_thread = self.main_thread;
+
+        while let Some(thread) = next_thread {
+            let thread_ref = unsafe { thread.as_ref() };
+            if thread_ref.status != TaskStatus::Dead {
+                dead = false;
+            }
+
+            next_thread = thread_ref.next;
+        }
+
+        dead
+    }
 }
 
 /// Copies higher half mappings from one page-table manager to another.
@@ -232,7 +286,9 @@ fn allocate_page_mappings() -> Result<*const PageTable, SchedulerError> {
         let new_pml4 =
             vmm.alloc(PAGE_SIZE, VmFlags::WRITE, AllocationType::AnyPages)? as *mut PageTable;
 
-        unsafe { copy_higher_half_mappings(current_pml4, new_pml4)?; }
+        unsafe {
+            copy_higher_half_mappings(current_pml4, new_pml4)?;
+        }
         Ok(new_pml4)
     } else {
         Err(SchedulerError::MemoryAllocationError(
@@ -246,4 +302,11 @@ pub(crate) enum TaskStatus {
     Ready,
     Running,
     Dead,
+}
+
+#[derive(Debug)]
+pub(in crate::scheduling) enum NextThread {
+    None,
+    TaskDead,
+    Found(Option<NonNull<Thread>>),
 }
