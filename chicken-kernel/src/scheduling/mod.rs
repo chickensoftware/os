@@ -181,7 +181,7 @@ fn c() {
 }
 
 impl TaskScheduler {
-    pub(crate) fn schedule(&mut self, context: *const CpuState) -> *const CpuState {
+    pub(crate) fn schedule(&mut self, context: *const CpuState, _uptime: u64) -> *const CpuState {
         if let Some(mut active_task) = self.active_task {
             let active_task = unsafe { active_task.as_mut() };
             match active_task.get_next_thread() {

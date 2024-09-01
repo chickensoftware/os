@@ -5,6 +5,12 @@ pub(in crate::base) mod pit;
 pub(in crate::base) trait Timer {
     const BASE_FREQUENCY: u64;
 
+    /// Increment tick counter.
+    fn tick();
+
+    /// Current uptime since enabling interrupts in ms.
+    fn current_uptime_ms(&self) -> u64;
+
     /// Called when timer interrupt occurs.
     fn perform_context_switch(&self, context: *const CpuState) -> *const CpuState;
 

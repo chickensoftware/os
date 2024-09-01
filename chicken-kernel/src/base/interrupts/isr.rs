@@ -9,6 +9,7 @@ use crate::{base::{
     },
 }, println};
 use crate::base::interrupts::without_interrupts;
+use crate::base::io::timer::pit::ProgrammableIntervalTimer;
 
 extern "C" {
     fn vector_0_handler();
@@ -77,8 +78,13 @@ fn keyboard_handler() {
 
 fn pit_handler(context: *const CpuState) -> *const CpuState {
     without_interrupts(|| {
+        // increment tick counter
+        ProgrammableIntervalTimer::tick();
+
+        // context switch
         let binding = PIT.lock();
         let context = binding.perform_context_switch(context);
+
         // send end of interrupt signal to lapic that sent the interrupt
         io::apic::lapic::eoi();
         context

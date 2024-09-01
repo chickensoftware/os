@@ -1,14 +1,17 @@
+use core::sync::atomic::{AtomicU64, Ordering};
+
 use crate::{
     base::{
         interrupts::CpuState,
         io::{io_wait, outb, Port, timer::Timer},
-    }
-    ,
+    },
     scheduling::{SCHEDULER, spin::SpinLock},
 };
 
 const TICK_GENERATOR_PORT: Port = 0x40;
 const PIT_PORT: Port = 0x43;
+
+pub(in crate::base) static TICK_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 pub(in crate::base) static PIT: SpinLock<ProgrammableIntervalTimer> =
     SpinLock::new(ProgrammableIntervalTimer::new());
@@ -52,10 +55,22 @@ impl ProgrammableIntervalTimer {
 impl Timer for ProgrammableIntervalTimer {
     const BASE_FREQUENCY: u64 = 1193182;
 
+    fn tick() {
+        TICK_COUNTER.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn current_uptime_ms(&self) -> u64 {
+        let frequency = ProgrammableIntervalTimer::BASE_FREQUENCY / self.frequency();
+        let ticks = TICK_COUNTER.load(Ordering::Relaxed);
+        (ticks * 1000) / frequency
+    }
+
     fn perform_context_switch(&self, context: *const CpuState) -> *const CpuState {
+        let uptime = self.current_uptime_ms();
+
         let mut binding = SCHEDULER.lock();
         if let Some(scheduler) = binding.get_mut() {
-            scheduler.schedule(context)
+            scheduler.schedule(context, uptime)
         } else {
             context
         }
