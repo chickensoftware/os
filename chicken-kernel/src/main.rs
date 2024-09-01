@@ -9,6 +9,8 @@ use qemu_print::qemu_println;
 
 use chicken_util::BootInfo;
 
+use crate::scheduling::GlobalTaskScheduler;
+
 mod base;
 mod memory;
 mod scheduling;
@@ -27,6 +29,12 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
     base::interrupts::enable();
     // is never reached, because task scheduler starts when interrupts are enabled.
     hlt_loop();
+}
+
+pub(crate) fn main_task() {
+    println!("Hello, from main task!");
+
+    GlobalTaskScheduler::kill_active();
 }
 
 #[panic_handler]

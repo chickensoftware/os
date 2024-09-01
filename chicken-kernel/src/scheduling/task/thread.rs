@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 use core::ptr;
 use core::ptr::NonNull;
 
@@ -25,6 +26,8 @@ pub(crate) struct Thread {
     pub(in crate::scheduling) pid: u64,
     pub(in crate::scheduling) status: TaskStatus,
     pub(in crate::scheduling) name: String,
+
+    pub(in crate::scheduling) joins: Option<Vec<u64>>,
 
     pub(in crate::scheduling) next: Option<NonNull<Thread>>,
     pub(in crate::scheduling) prev: Option<NonNull<Thread>>,
@@ -70,6 +73,7 @@ impl Thread {
             name: "".to_string(),
             next: None,
             prev: None,
+            joins: None,
         }
     }
 }

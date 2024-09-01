@@ -79,6 +79,9 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [ ] Resources
 - [x] Threads
 - [ ] Thread API
+    - [x] Task Creation Helpers
+    - [ ] Thread Sleep
+    - [ ] Automatic Task Deletion
 - [x] Spin Lock
 
 ### Userspace

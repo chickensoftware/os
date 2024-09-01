@@ -1,6 +1,8 @@
 use alloc::{
     alloc::dealloc,
+    format,
     string::{String, ToString},
+    vec,
 };
 use core::{
     alloc::Layout,
@@ -10,24 +12,19 @@ use core::{
     ptr::NonNull,
 };
 
-use chicken_util::memory::paging::PageTable;
-use chicken_util::memory::VirtualAddress;
+use chicken_util::memory::{paging::PageTable, VirtualAddress};
 
-use crate::{
-    base::interrupts::{CpuState, without_interrupts},
-    hlt_loop,
-    memory::{
-        paging,
-        paging::{PagingError, PTM},
-        vmm::{VMM, VmmError},
+use crate::{base::interrupts::{CpuState, without_interrupts}, hlt_loop, main_task, memory::{
+    paging,
+    paging::{PagingError, PTM},
+    vmm::{VMM, VmmError},
+}, print, scheduling::{
+    spin::{Guard, SpinLock},
+    task::{
+        JoinHandle,
+        process::{copy_higher_half_mappings, NextThread, Process, TaskStatus},
     },
-    print, println,
-    scheduling::{
-        spin::{Guard, SpinLock},
-        task::process::{Process, TaskStatus},
-    },
-};
-use crate::scheduling::task::process::{copy_higher_half_mappings, NextThread};
+}};
 
 pub(crate) mod spin;
 mod task;
@@ -63,17 +60,71 @@ impl GlobalTaskScheduler {
     }
 
     /// Mark currently active thread as dead.
-    fn kill_active() {
+    pub(crate) fn kill_active() {
         // loop in case of interrupt during function call
         loop {
             without_interrupts(|| {
                 let mut binding = SCHEDULER.lock();
                 if let Some(scheduler) = binding.get_mut() {
+                    assert!(
+                        scheduler.active_task.is_some(),
+                        "Global task scheduler must have at least one active task (IDLE)."
+                    );
                     let active = unsafe { scheduler.active_task.unwrap().as_mut() };
-                    active.active_thread_mut().status = TaskStatus::Dead;
+                    let thread = unsafe { active.active_thread_ref() };
+                    let mut can_die = true;
+
+                    // check for any joins
+                    if let Some(ref joins) = thread.joins {
+                        // loop through each thread of active process and check if it has been joined & is alive
+                        let mut current_thread = active.main_thread;
+
+                        while let Some(current_thread_ptr) = current_thread {
+                            let thread_ref = unsafe { current_thread_ptr.as_ref() };
+
+                            if thread_ref.tid != thread.tid
+                                && thread_ref.status != TaskStatus::Dead
+                                && joins.iter().copied().any(|id| id == thread_ref.tid)
+                            {
+                                can_die = false;
+                            }
+
+                            current_thread = thread_ref.next;
+                        }
+                    }
+                    let thread = unsafe { active.active_thread_mut() };
+
+                    if can_die && thread.status != TaskStatus::Dead {
+                        thread.status = TaskStatus::Dead;
+                    }
                 }
             });
         }
+    }
+
+    /// Joins the thread specified by the handle to the current one.
+    fn join(handle: JoinHandle) {
+        without_interrupts(|| {
+            let mut binding = SCHEDULER.lock();
+            if let Some(scheduler) = binding.get_mut() {
+                assert!(
+                    scheduler.active_task.is_some(),
+                    "Global task scheduler must have at least one active task (IDLE)."
+                );
+                let active = unsafe { scheduler.active_task.unwrap().as_mut() };
+                assert!(
+                    active.active_thread.is_some(),
+                    "Each active task must have at least one active thread (MAIN)."
+                );
+                let thread = unsafe { active.active_thread_mut() };
+
+                if let Some(ref mut joins) = thread.joins {
+                    joins.push(handle.into_inner());
+                } else {
+                    thread.joins = Some(vec![handle.into_inner()]);
+                }
+            }
+        });
     }
 }
 
@@ -93,46 +144,32 @@ impl TaskScheduler {
             id_counter: 0,
         };
 
-        instance.add_task("IDLE".to_string(), idle)?;
-        instance.add_task("TEST".to_string(), test)?;
-        instance.add_task("A".to_string(), a)?;
+        instance.add_task(Some("IDLE".to_string()), idle)?;
+        instance.add_task(Some("A".to_string()), a)?;
 
         Ok(instance)
     }
 }
 
 fn idle() {
-    println!("idle");
     hlt_loop();
-}
-
-fn test() {
-    for _ in 0..500 {
-        print!("A");
-    }
-    GlobalTaskScheduler::kill_active();
 }
 
 fn a() {
-    without_interrupts(|| {
-        let mut binding = SCHEDULER.lock();
-        if let Some(scheduler) = binding.get_mut() {
-            let active = unsafe { scheduler.active_task.unwrap().as_mut() };
-            active.add_thread("B".to_string(), b).unwrap();
-            active.add_thread("C".to_string(), c).unwrap();
-        }
-    });
+    let handle1 = task::spawn_thread(b, Some("mythready".to_string())).unwrap();
+    let handle2 = task::spawn_thread(c, Some("mythready2".to_string())).unwrap();
+    GlobalTaskScheduler::join(handle1);
+    GlobalTaskScheduler::join(handle2);
 
-    // thread joining has not been implemented, so all threads of the current process are killed, if the main thread ends.
-    hlt_loop();
-    // GlobalTaskScheduler::kill_active();
+    task::spawn_process(main_task, Some("KERNEL-MAIN".to_string())).unwrap();
+
+    GlobalTaskScheduler::kill_active();
 }
 
 fn b() {
     for _ in 0..500 {
         print!("B");
     }
-
     GlobalTaskScheduler::kill_active();
 }
 
@@ -151,33 +188,37 @@ impl TaskScheduler {
                 // switch to next process
                 NextThread::None => {
                     // store state of previously active thread
-                    active_task.active_thread_mut().status = TaskStatus::Ready;
-                    active_task.active_thread_mut().context = context;
+                    let previously_active_thread = unsafe { active_task.active_thread_mut() };
+                    if previously_active_thread.status != TaskStatus::Dead {
+                        previously_active_thread.status = TaskStatus::Ready;
+                        previously_active_thread.context = context;
+                    }
 
                     // set active thread to main thread
                     active_task.active_thread = active_task.main_thread;
                 }
                 // switch to next process
                 NextThread::TaskDead => {
-
                     // mark task as dead, so it gets removed later.
                     active_task.status = TaskStatus::Dead;
                 }
                 // execute next ready thread in current process
                 NextThread::Found(next_thread) => {
                     // save state of previously active thread
-                    let active_thread = active_task.active_thread_mut();
-
-                    active_thread.context = context;
-                    active_thread.status = TaskStatus::Ready;
+                    let active_thread = unsafe { active_task.active_thread_mut() };
+                    if active_thread.status != TaskStatus::Dead {
+                        active_thread.context = context;
+                        active_thread.status = TaskStatus::Ready;
+                    }
 
                     // set active thread to found thread
                     active_task.active_thread = next_thread;
-                    active_task.active_thread_mut().status = TaskStatus::Running;
-
+                    unsafe {
+                        active_task.active_thread_mut().status = TaskStatus::Running;
+                    }
 
                     // return context of next thread
-                    return active_task.active_thread_ref().context;
+                    return unsafe { active_task.active_thread_ref().context };
                 }
             }
             // no threads are ready in the current process
@@ -190,11 +231,12 @@ impl TaskScheduler {
             idle_ref.status = TaskStatus::Running;
 
             idle_ref.active_thread = idle_ref.main_thread;
-            idle_ref.active_thread_mut().status = TaskStatus::Running;
+            unsafe {
+                idle_ref.active_thread_mut().status = TaskStatus::Running;
+            }
 
             self.active_task = idle;
-
-            idle_ref.active_thread_mut().context
+            unsafe { idle_ref.active_thread_mut().context }
         }
     }
 
@@ -212,7 +254,6 @@ impl TaskScheduler {
             // save currently active state if task is not dead
             if active_task.status != TaskStatus::Dead {
                 active_task.status = TaskStatus::Ready;
-                active_task.active_thread_mut().context = context;
             }
 
             // update new active task
@@ -225,17 +266,20 @@ impl TaskScheduler {
                 binding.get().is_some(),
                 "PTM must be set up when calling scheduler."
             );
-            let manager = binding
-                .get_mut()
-                .unwrap();
+            let manager = binding.get_mut().unwrap();
 
             // copy higher half page tables if kernel mappings have been changed by current process
             if active_task.update_kernel_mappings {
                 unsafe {
-                    copy_higher_half_mappings(manager.pml4_virtual(), next_active_task_ref.page_table_mappings as *mut PageTable).unwrap();
+                    copy_higher_half_mappings(
+                        manager.pml4_virtual(),
+                        next_active_task_ref.page_table_mappings as *mut PageTable,
+                    )
+                    .unwrap();
                 }
             }
-            let new_mappings_address = manager.get_physical(next_active_task_ref.page_table_mappings as VirtualAddress);
+            let new_mappings_address =
+                manager.get_physical(next_active_task_ref.page_table_mappings as VirtualAddress);
 
             assert!(
                 new_mappings_address.is_some(),
@@ -251,7 +295,7 @@ impl TaskScheduler {
             }
             PTM.unlock();
 
-            next_active_task_ref.active_thread_mut().context
+            unsafe { next_active_task_ref.main_thread.unwrap().as_ref().context }
         } else {
             context
         }
@@ -293,14 +337,18 @@ impl TaskScheduler {
 
 impl TaskScheduler {
     /// Appends a task to the list of tasks.
-    fn add_task(&mut self, name: String, entry: fn()) -> Result<(), SchedulerError> {
+    fn add_task(&mut self, name: Option<String>, entry: fn()) -> Result<(), SchedulerError> {
         let mut current = self.head;
 
         // every task ever created has a unique ID
         self.id_counter += 1;
 
         if current.is_none() {
-            let task_ptr = Process::create(name, entry, self.id_counter)?;
+            let task_ptr = Process::create(
+                name.unwrap_or(format!("TASK-{}", self.id_counter)),
+                entry,
+                self.id_counter,
+            )?;
             self.head = task_ptr;
             return Ok(());
         }
@@ -308,7 +356,11 @@ impl TaskScheduler {
         while let Some(mut current_task) = current {
             let current_task = unsafe { current_task.as_mut() };
             if current_task.next.is_none() {
-                let task_ptr = Process::create(name, entry, self.id_counter)?;
+                let task_ptr = Process::create(
+                    name.unwrap_or(format!("TASK-{}", self.id_counter)),
+                    entry,
+                    self.id_counter,
+                )?;
                 let task = unsafe { task_ptr.unwrap().as_mut() };
                 task.prev = current;
 

@@ -57,7 +57,7 @@ pub fn interrupt_dispatch(mut state_ptr: *const CpuState) -> *const CpuState {
                 "Interrupt handler has not been set up. vector: {:#x}, error code (if set): {:?}",
                 state.vector_number,
                 error_code::ErrorCode::from_bits_truncate(state.error_code as u32)
-            )
+            );
         }
     }
 

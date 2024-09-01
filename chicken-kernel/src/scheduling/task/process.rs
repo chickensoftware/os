@@ -12,7 +12,8 @@ use crate::{
     memory::{
         paging::{PagingError, PTM},
         vmm::{AllocationType, object::VmFlags, VMM, VmmError},
-    },
+    }
+    ,
     scheduling::{SchedulerError, task::thread::Thread},
 };
 
@@ -57,7 +58,7 @@ impl Process {
         process_ref.page_table_mappings = pml4;
 
         // set up main thread
-        process_ref.add_thread(format!("{}{}", MAIN_THREAD_NAME, pid), entry)?;
+        process_ref.add_thread(Some(format!("{}{}", MAIN_THREAD_NAME, pid)), entry)?;
 
         Ok(process)
     }
@@ -81,14 +82,27 @@ impl Process {
 }
 
 impl Process {
-    pub(crate) fn active_thread_mut(&mut self) -> &mut Thread {
+    /// Get mutable reference to active thread.
+    ///
+    /// # Safety
+    /// Caller must ensure that active thread exists.
+    pub(in crate::scheduling) unsafe fn active_thread_mut(&mut self) -> &mut Thread {
         unsafe { self.active_thread.unwrap().as_mut() }
     }
-    pub(crate) fn active_thread_ref(&self) -> &Thread {
+    /// Get immutable reference to active thread.
+    ///
+    /// # Safety
+    /// Caller must ensure that active thread exists.
+    pub(in crate::scheduling) unsafe fn active_thread_ref(&self) -> &Thread {
         unsafe { self.active_thread.unwrap().as_ref() }
     }
 
-    pub(crate) fn add_thread(&mut self, name: String, entry: fn()) -> Result<(), SchedulerError> {
+    /// Adds the thread to the list of threads of the process. Returns the tid for the new thread or an error.
+    pub(in crate::scheduling) fn add_thread(
+        &mut self,
+        name: Option<String>,
+        entry: fn(),
+    ) -> Result<u64, SchedulerError> {
         let mut current = self.main_thread;
 
         // every thread ever created has a unique ID
@@ -96,27 +110,38 @@ impl Process {
 
         // main thread initialization
         if current.is_none() {
-            let thread_ptr = Thread::create(name, entry, self.thread_id_counter, self.pid)?;
+            let thread_ptr = Thread::create(
+                name.unwrap_or(format!("MAIN-{}", self.thread_id_counter)),
+                entry,
+                self.thread_id_counter,
+                self.pid,
+            )?;
             self.main_thread = thread_ptr;
             self.active_thread = self.main_thread;
-            return Ok(());
+            return Ok(self.thread_id_counter);
         }
 
         while let Some(mut current_thread) = current {
             let current_thread = unsafe { current_thread.as_mut() };
             // append at the end of the list
             if current_thread.next.is_none() {
-                let thread_ptr = Thread::create(name, entry, self.thread_id_counter, self.pid)?;
+                let thread_ptr = Thread::create(
+                    name.unwrap_or(format!("THREAD-{}", self.thread_id_counter)),
+                    entry,
+                    self.thread_id_counter,
+                    self.pid,
+                )?;
                 let thread = unsafe { thread_ptr.unwrap().as_mut() };
                 thread.prev = current;
 
                 current_thread.next = thread_ptr;
-                return Ok(());
+                return Ok(self.thread_id_counter);
             }
             current = current_thread.next;
         }
 
-        Ok(())
+        // will not get called.
+        Ok(0)
     }
 
     /// Removes the specified thread from the list. Returns whether the action succeeds. The thread to be removed must not be the currently active.
@@ -159,6 +184,9 @@ impl Process {
                     next_ref.prev = current_ref.prev;
                 }
 
+                // free vec of joins
+                let _ = current_ref.joins.take();
+
                 // deallocate thread
                 unsafe {
                     dealloc(heap_ptr as *mut u8, Layout::new::<Thread>());
@@ -190,7 +218,8 @@ impl Process {
             return NextThread::TaskDead;
         }
 
-        let mut next_thread = self.active_thread_ref().next;
+        let mut next_thread = unsafe { self.active_thread_ref().next };
+
         // get next thread that is ready
         while let Some(thread) = next_thread {
             let thread_ref = unsafe { thread.as_ref() };
@@ -223,7 +252,6 @@ impl Process {
             "Each task must have a main thread."
         );
 
-        // todo: add join-ability to threads, for now exit when main thread is dead
         if unsafe { self.main_thread.unwrap().as_ref().status == TaskStatus::Dead } {
             return true;
         }
