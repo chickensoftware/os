@@ -8,14 +8,11 @@ use core::{alloc::Layout, ptr, ptr::NonNull};
 
 use chicken_util::{memory::paging::PageTable, PAGE_SIZE};
 
-use crate::{
-    memory::{
-        paging::{PagingError, PTM},
-        vmm::{AllocationType, object::VmFlags, VMM, VmmError},
-    }
-    ,
-    scheduling::{SchedulerError, task::thread::Thread},
-};
+use crate::{memory::{
+    paging::{PagingError, PTM},
+    vmm::{AllocationType, object::VmFlags, VMM, VmmError},
+}, scheduling::{SchedulerError, task::thread::Thread}};
+use crate::scheduling::task::thread::ThreadStatus;
 
 const MAIN_THREAD_NAME: &str = "MAIN-";
 #[derive(Debug)]
@@ -212,7 +209,7 @@ impl Process {
     }
 
     /// Gets the next ready thread information of the process. Returns whether the task has any alive threads, if all threads have been run for one iteration or the next ready thread.
-    pub(in crate::scheduling) fn get_next_thread(&self) -> NextThread {
+    pub(in crate::scheduling) fn get_next_thread(&self, uptime: u64) -> NextThread {
         // mark task as dead.
         if self.is_dead() {
             return NextThread::TaskDead;
@@ -221,9 +218,16 @@ impl Process {
         let mut next_thread = unsafe { self.active_thread_ref().next };
 
         // get next thread that is ready
-        while let Some(thread) = next_thread {
-            let thread_ref = unsafe { thread.as_ref() };
-            if thread_ref.status == TaskStatus::Ready {
+        while let Some(mut thread) = next_thread {
+            let thread_ref = unsafe { thread.as_mut() };
+
+            if let ThreadStatus::Sleep(wake_time_ms) = thread_ref.status {
+                if uptime >= wake_time_ms {
+                    thread_ref.status = ThreadStatus::Ready;
+                }
+            }
+
+            if thread_ref.status == ThreadStatus::Ready {
                 break;
             }
 
@@ -252,7 +256,7 @@ impl Process {
             "Each task must have a main thread."
         );
 
-        if unsafe { self.main_thread.unwrap().as_ref().status == TaskStatus::Dead } {
+        if unsafe { self.main_thread.unwrap().as_ref().status == ThreadStatus::Dead } {
             return true;
         }
 
@@ -261,7 +265,7 @@ impl Process {
 
         while let Some(thread) = next_thread {
             let thread_ref = unsafe { thread.as_ref() };
-            if thread_ref.status != TaskStatus::Dead {
+            if thread_ref.status != ThreadStatus::Dead {
                 dead = false;
             }
 

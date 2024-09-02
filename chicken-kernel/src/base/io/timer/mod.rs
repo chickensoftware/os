@@ -1,8 +1,8 @@
 use crate::base::interrupts::CpuState;
 
-pub(in crate::base) mod pit;
+pub(crate) mod pit;
 // note: For now, only pit is supported; HPET, LAPIC may follow later.
-pub(in crate::base) trait Timer {
+pub(crate) trait Timer {
     const BASE_FREQUENCY: u64;
 
     /// Increment tick counter.

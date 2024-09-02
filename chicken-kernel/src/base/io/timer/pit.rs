@@ -4,7 +4,8 @@ use crate::{
     base::{
         interrupts::CpuState,
         io::{io_wait, outb, Port, timer::Timer},
-    },
+    }
+    ,
     scheduling::{SCHEDULER, spin::SpinLock},
 };
 
@@ -13,16 +14,18 @@ const PIT_PORT: Port = 0x43;
 
 pub(in crate::base) static TICK_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-pub(in crate::base) static PIT: SpinLock<ProgrammableIntervalTimer> =
+pub(crate) static PIT: SpinLock<ProgrammableIntervalTimer> =
     SpinLock::new(ProgrammableIntervalTimer::new());
 
 #[derive(Debug)]
-pub(in crate::base) struct ProgrammableIntervalTimer {
+pub(crate) struct ProgrammableIntervalTimer {
     divisor: u16,
 }
 
 impl ProgrammableIntervalTimer {
     pub(in crate::base) const MAX_DIVISOR: u16 = 65535;
+    /// Frequency that works well for scheduler and sleeping threads.
+    pub(in crate::base) const PIT_FREQUENCY: u64 = 1000;
 
     const fn new() -> Self {
         Self {
@@ -85,4 +88,10 @@ impl Timer for ProgrammableIntervalTimer {
     fn frequency(&self) -> u64 {
         ProgrammableIntervalTimer::BASE_FREQUENCY / self.divisor as u64
     }
+}
+
+/// Locks PIT to get current uptime.
+pub(crate) fn get_current_uptime_ms() -> u64 {
+    let pit = PIT.lock();
+    pit.current_uptime_ms()
 }

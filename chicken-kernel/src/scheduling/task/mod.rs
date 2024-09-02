@@ -6,7 +6,7 @@ use crate::{
 };
 
 pub(crate) mod process;
-mod thread;
+pub(crate) mod thread;
 
 #[derive(Debug)]
 pub(crate) struct JoinHandle {

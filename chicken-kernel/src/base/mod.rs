@@ -6,7 +6,7 @@ use crate::base::io::timer::Timer;
 use crate::println;
 
 mod acpi;
-mod io;
+pub(crate) mod io;
 pub(crate) mod gdt;
 pub(crate) mod interrupts;
 pub(crate) mod msr;

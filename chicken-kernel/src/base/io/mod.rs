@@ -15,7 +15,7 @@ use crate::base::io::timer::Timer;
 
 pub(in crate::base) mod apic;
 pub(in crate::base) mod keyboard;
-pub(in crate::base) mod timer;
+pub(crate) mod timer;
 
 mod pic;
 
@@ -59,7 +59,7 @@ pub(super) fn initialize(boot_info: &BootInfo) {
 
         // enable PIT
         let mut binding = PIT.lock();
-        binding.set_frequency(ProgrammableIntervalTimer::BASE_FREQUENCY / ProgrammableIntervalTimer::MAX_DIVISOR as u64);
+        binding.set_frequency(ProgrammableIntervalTimer::PIT_FREQUENCY);
     }
 }
 

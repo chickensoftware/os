@@ -9,7 +9,10 @@ use qemu_print::qemu_println;
 
 use chicken_util::BootInfo;
 
-use crate::scheduling::GlobalTaskScheduler;
+use crate::{
+    base::io::timer::pit::get_current_uptime_ms,
+    scheduling::{GlobalTaskScheduler, task},
+};
 
 mod base;
 mod memory;
@@ -33,6 +36,22 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
 
 pub(crate) fn main_task() {
     println!("Hello, from main task!");
+
+    fn hello() {
+        println!("Hello");
+
+        GlobalTaskScheduler::sleep(10000);
+
+        println!("Complete");
+
+        GlobalTaskScheduler::kill_active();
+    }
+
+    let thread_handle = task::spawn_thread(hello, None).unwrap();
+
+    GlobalTaskScheduler::join(thread_handle);
+
+    println!("{}", get_current_uptime_ms());
 
     GlobalTaskScheduler::kill_active();
 }

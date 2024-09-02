@@ -80,7 +80,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [x] Threads
 - [ ] Thread API
     - [x] Task Creation Helpers
-    - [ ] Thread Sleep
+    - [x] Thread Sleep
     - [ ] Automatic Task Deletion
 - [x] Spin Lock
 
