@@ -75,7 +75,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 
 ### Scheduling
 - [x] Scheduler
-- [x] Processes
+- [x] Processes: todo: fix process isolation pml4 switch 
 - [ ] Resources
 - [x] Threads
 - [ ] Thread API
