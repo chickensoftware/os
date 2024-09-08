@@ -6,7 +6,7 @@
   "disable-redzone": true,
   "executables": true,
   "exe-suffix": ".elf",
-  "features": "-mmx,-sse,-sse2,-sse3,-ssse3,-sse4.1,-sse4.2,-3dnow,-3dnowa,-avx,-avx2,+soft-float",
+  "features": "-mmx,-sse,-sse2,-sse3,-ssse3,-sse4.1,-sse4.2,-avx,-avx2,+soft-float",
   "linker-flavor": "ld.lld",
   "llvm-target": "x86_64-unknown-none-elf",
   "max-atomic-width": 64,
@@ -15,15 +15,10 @@
   "relro-level": "off",
   "position-independent-executables": false,
   "pre-link-args": {
-    "ld.lld": [
-      "-T./chicken-kernel/linker.ld"
-    ]
+    "ld.lld": ["-T./chicken-kernel/linker.ld"]
   },
   "post-link-args": {
-    "ld.lld": [
-      "--entry=_start",
-      "--static"
-    ]
+    "ld.lld": ["--entry=_start", "--static"]
   },
   "target-pointer-width": "64"
 }

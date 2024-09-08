@@ -294,8 +294,8 @@ pub(in crate::scheduling) unsafe fn copy_higher_half_mappings(
         .ok_or(SchedulerError::PageTableManagerError(
             PagingError::Pml4PointerMisaligned,
         ))?;
-
     dst.entries.copy_from_slice(src.entries.as_slice());
+
     Ok(())
 }
 

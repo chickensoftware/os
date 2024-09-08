@@ -2,27 +2,29 @@ use core::arch::asm;
 
 use crate::memory::{
     paging::{index::PageMapIndexer, PageEntryFlags, PageTable},
-    PhysicalAddress,
-    pmm::{PageFrameAllocator, PageFrameAllocatorError}, VirtualAddress,
+    pmm::{PageFrameAllocator, PageFrameAllocatorError},
+    PhysicalAddress, VirtualAddress,
 };
 
 /// Manages page tables
 #[derive(Debug)]
 pub struct PageTableManager<'a> {
     page_map_level4: *mut PageTable,
+    page_map_level4_virtual: *mut PageTable,
     pub(in crate::memory) page_frame_allocator: PageFrameAllocator<'a>,
     /// Used to make page table entries accessible after enabling the new paging scheme (direct mapping with offset)
     offset: VirtualAddress,
 }
 
 impl<'a> PageTableManager<'a> {
-    /// Creates new page table manager instance. By default, a virtual `offset` of 0 is used. This can be changed manually using [`PageTableManager::update()`].
+    /// Creates new page table manager instance. By default, a virtual `offset` of 0 is used. This can be changed manually using [`PageTableManager::update_offset()`].
     pub fn new(
         page_map_level4: *mut PageTable,
         page_frame_allocator: PageFrameAllocator<'a>,
     ) -> Self {
         Self {
             page_map_level4,
+            page_map_level4_virtual: page_map_level4,
             page_frame_allocator,
             offset: 0,
         }
@@ -40,13 +42,13 @@ impl<'a> PageTableManager<'a> {
 
     /// Returns pointer to root page table virtual address.
     pub fn pml4_virtual(&self) -> *mut PageTable {
-        (self.page_map_level4 as u64 + self.offset) as *mut PageTable
+        self.page_map_level4_virtual
     }
 
     /// Returns the physical address associated with the provided virtual address. May return None if the mapping is not available.
     pub fn get_physical(&self, virtual_address: VirtualAddress) -> Option<PhysicalAddress> {
         let indexer = PageMapIndexer::new(virtual_address);
-        let page_map_level4 = (self.page_map_level4 as u64 + self.offset) as *mut PageTable;
+        let page_map_level4 = self.pml4_virtual();
         // Map Level 3
         let page_map_level3 = self.get_next_table(page_map_level4, indexer.pdp_i())?;
         // Map Level 2
@@ -62,14 +64,23 @@ impl<'a> PageTableManager<'a> {
     ///
     /// # Safety
     /// The caller must ensure that the new address is valid.
-    pub unsafe fn update_pml4(&mut self, new_address: VirtualAddress) {
+    pub unsafe fn update_pml4(&mut self, new_address: PhysicalAddress) {
         self.page_map_level4 = new_address as *mut PageTable;
     }
+
+    /// Used to switch to a different page table mapping.
+    ///
+    /// # Safety
+    /// The caller must ensure that the new address is mapped and valid.
+    pub unsafe fn update_pml4_virtual(&mut self, new_address: VirtualAddress) {
+        self.page_map_level4_virtual = new_address as *mut PageTable;
+    }
+
     /// Used to make page table manager accessible after enabling direct mapping paging scheme with offset. Updates page table manager to use offset when traversing page tables.
     ///
     /// # Safety
     /// The caller must ensure that the offset is valid.
-    pub unsafe fn update(&mut self, offset: VirtualAddress) {
+    pub unsafe fn update_offset(&mut self, offset: VirtualAddress) {
         self.offset = offset;
     }
 
@@ -81,7 +92,7 @@ impl<'a> PageTableManager<'a> {
         flags: PageEntryFlags,
     ) -> Result<(), PageFrameAllocatorError> {
         let indexer = PageMapIndexer::new(virtual_memory);
-        let page_map_level4 = (self.page_map_level4 as u64 + self.offset) as *mut PageTable;
+        let page_map_level4 = self.pml4_virtual();
         // Map Level 3
         let page_map_level3 = self.get_or_create_next_table(page_map_level4, indexer.pdp_i())?;
         // Map Level 2
@@ -103,7 +114,7 @@ impl<'a> PageTableManager<'a> {
         virtual_memory: VirtualAddress,
     ) -> Result<PhysicalAddress, PageFrameAllocatorError> {
         let indexer = PageMapIndexer::new(virtual_memory);
-        let page_map_level4 = (self.page_map_level4 as u64 + self.offset) as *mut PageTable;
+        let page_map_level4 = self.pml4_virtual();
         // Map Level 3
         let page_map_level3 = self.get_or_create_next_table(page_map_level4, indexer.pdp_i())?;
         // Map Level 2

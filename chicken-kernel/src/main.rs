@@ -5,13 +5,12 @@ extern crate alloc;
 
 use core::{arch::asm, panic::PanicInfo};
 
-use qemu_print::qemu_println;
-
 use chicken_util::BootInfo;
+use qemu_print::qemu_println;
 
 use crate::{
     base::io::timer::pit::get_current_uptime_ms,
-    scheduling::{GlobalTaskScheduler, task},
+    scheduling::{task, GlobalTaskScheduler},
 };
 
 mod base;
@@ -50,6 +49,10 @@ pub(crate) fn main_task() {
     let thread_handle = task::spawn_thread(hello, None).unwrap();
 
     GlobalTaskScheduler::join(thread_handle);
+
+    // todo: fix process isolation with separate paging scheme
+    // => paging offset (should stay the same)
+    // => pml4 virtual address (must change)
 
     println!("{}", get_current_uptime_ms());
 

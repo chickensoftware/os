@@ -7,16 +7,16 @@ use core::{
 };
 
 use chicken_util::{
-    BootInfo,
     graphics::font::Font,
     memory::{
-        MemoryDescriptor,
-        MemoryMap,
-        MemoryType, paging::{
-            KERNEL_MAPPING_OFFSET, KERNEL_STACK_MAPPING_OFFSET, manager::PageTableManager, PageEntryFlags,
-            PageTable,
-        }, PhysicalAddress, pmm::{PageFrameAllocator, PageFrameAllocatorError},
-    }, PAGE_SIZE,
+        paging::{
+            manager::PageTableManager, PageEntryFlags, PageTable, KERNEL_MAPPING_OFFSET,
+            KERNEL_STACK_MAPPING_OFFSET,
+        },
+        pmm::{PageFrameAllocator, PageFrameAllocatorError},
+        MemoryDescriptor, MemoryMap, MemoryType, PhysicalAddress,
+    },
+    BootInfo, PAGE_SIZE,
 };
 
 use crate::{
@@ -180,7 +180,12 @@ pub(super) fn setup<'a>(
 
     // update page table addresses to virtual ones
     unsafe {
-        manager.update(VIRTUAL_PHYSICAL_BASE);
+        manager.update_offset(VIRTUAL_PHYSICAL_BASE);
+    }
+
+    // update virtual address of pml4
+    unsafe {
+        manager.update_pml4_virtual(manager.pml4_physical() as u64 + VIRTUAL_PHYSICAL_BASE);
     }
 
     // todo: free reserved loader page tables, since they are no longer needed
@@ -193,7 +198,7 @@ pub(super) fn setup<'a>(
 /// # Safety
 /// The caller must ensure that the provided address is a valid physical address pointing to a page table.
 pub(crate) unsafe fn enable(pml4_address: PhysicalAddress) {
-        asm!("mov cr3, {}", in(reg) pml4_address);
+    asm!("mov cr3, {}", in(reg) pml4_address);
 }
 
 #[derive(Copy, Clone)]

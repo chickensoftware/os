@@ -27,7 +27,6 @@ use crate::{base::interrupts::{CpuState, without_interrupts}, hlt_loop, main_tas
 }};
 use crate::base::io::timer::pit::get_current_uptime_ms;
 use crate::scheduling::task::thread::ThreadStatus;
-
 pub(crate) mod spin;
 pub(crate) mod task;
 
@@ -252,6 +251,11 @@ impl TaskScheduler {
 
             // save currently active state if task is not dead
             if active_task.status != TaskStatus::Dead {
+                // only one active task left => short circuit
+                if active_task.pid == next_active_task_ref.pid {
+                   return context;
+                }
+
                 active_task.status = TaskStatus::Ready;
             }
 
@@ -277,23 +281,24 @@ impl TaskScheduler {
                     .unwrap();
                 }
             }
-            let new_mappings_address =
+            let new_mappings_virtual = next_active_task_ref.page_table_mappings as VirtualAddress;
+            let new_mappings_physical =
                 manager.get_physical(next_active_task_ref.page_table_mappings as VirtualAddress);
 
             assert!(
-                new_mappings_address.is_some(),
+                new_mappings_physical.is_some(),
                 "Page table mappings of each process must be set up."
             );
-            let new_mappings = new_mappings_address.unwrap();
+            let new_mappings_physical = new_mappings_physical.unwrap();
             unsafe {
-                paging::enable(new_mappings);
+                paging::enable(new_mappings_physical);
             }
             let ptm = binding.get_mut().unwrap();
             unsafe {
-                ptm.update_pml4(new_mappings);
+                ptm.update_pml4(new_mappings_physical);
+                ptm.update_pml4_virtual(new_mappings_virtual);
             }
             PTM.unlock();
-
             unsafe { next_active_task_ref.main_thread.unwrap().as_ref().context }
         } else {
             context
