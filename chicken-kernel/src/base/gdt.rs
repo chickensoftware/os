@@ -2,11 +2,16 @@ use core::cell::OnceCell;
 
 use bitflags::bitflags;
 
-use crate::scheduling::spin::SpinLock;
+use crate::{println, scheduling::spin::SpinLock};
 
 pub(crate) const KERNEL_CS: u16 = 0x08;
-// note: data segments is also used for stack allocation of new kernel processes.
+// note: data segment is also used for stack allocation of new kernel processes.
 pub(crate) const KERNEL_DS: u16 = 0x10;
+
+// 3 for user dpl
+pub(crate) const USER_CS: u16 = 0x18 | 3;
+// note: data segment is also used for stack allocation of new user processes.
+pub(crate) const USER_DS: u16 = 0x20 | 3;
 
 static GDT: SpinLock<OnceCell<GlobalDescriptorTable>> = SpinLock::new(OnceCell::new());
 
@@ -93,7 +98,7 @@ impl SegmentDescriptor {
     }
 
     fn user_data() -> Self {
-        SegmentDescriptor::new(
+        let test = SegmentDescriptor::new(
             0,
             0xFFFFF,
             AccessByte::PRESENT
@@ -101,7 +106,9 @@ impl SegmentDescriptor {
                 | AccessByte::DESCRIPTOR_TYPE
                 | AccessByte::CONFORMING_DIRECTION,
             SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
-        )
+        );
+        println!("test: {:#b}", test.access.bits());
+        test
     }
 }
 

@@ -10,7 +10,7 @@ use chicken_util::{
     graphics::font::Font,
     memory::{
         paging::{
-            manager::PageTableManager, PageEntryFlags, PageTable, KERNEL_MAPPING_OFFSET,
+            manager::OwnedPageTableManager, PageEntryFlags, PageTable, KERNEL_MAPPING_OFFSET,
             KERNEL_STACK_MAPPING_OFFSET,
         },
         pmm::{PageFrameAllocator, PageFrameAllocatorError},
@@ -30,7 +30,7 @@ pub(super) const VIRTUAL_PHYSICAL_BASE: u64 = 0xFFFF_8000_0000_0000;
 pub(super) const VIRTUAL_DATA_BASE: u64 = 0xFFFF_FFFF_7000_0000;
 #[derive(Debug)]
 pub(crate) struct GlobalPageTableManager {
-    inner: SpinLock<OnceCell<PageTableManager<'static>>>,
+    inner: SpinLock<OnceCell<OwnedPageTableManager<'static>>>,
 }
 
 unsafe impl Send for GlobalPageTableManager {}
@@ -43,11 +43,11 @@ impl GlobalPageTableManager {
         }
     }
 
-    pub(super) fn init(page_table_manager: PageTableManager<'static>) {
+    pub(super) fn init(page_table_manager: OwnedPageTableManager<'static>) {
         let ptm = PTM.inner.lock();
         ptm.get_or_init(|| page_table_manager);
     }
-    pub(crate) fn lock(&self) -> Guard<OnceCell<PageTableManager<'static>>> {
+    pub(crate) fn lock(&self) -> Guard<OnceCell<OwnedPageTableManager<'static>>> {
         self.inner.lock()
     }
     pub(crate) fn unlock(&self) {
@@ -87,7 +87,7 @@ impl GlobalPageTableManager {
 pub(super) fn setup<'a>(
     mut frame_allocator: PageFrameAllocator<'a>,
     old_boot_info: &BootInfo,
-) -> Result<(PageTableManager<'a>, BootInfo), PagingError> {
+) -> Result<(OwnedPageTableManager<'a>, BootInfo), PagingError> {
     let memory_map = old_boot_info.memory_map;
     // Allocate and clear a new PML4 page
     let pml4_addr = frame_allocator.request_page().map_err(PagingError::from)?;
@@ -97,7 +97,8 @@ pub(super) fn setup<'a>(
     let pml4_table = pml4_addr as *mut PageTable;
     unsafe { ptr::write_bytes(pml4_table, 0, 1) };
 
-    let mut manager: PageTableManager = PageTableManager::new(pml4_table, frame_allocator);
+    let mut owned_manager: OwnedPageTableManager =
+        OwnedPageTableManager::new(pml4_table, frame_allocator);
 
     let smallest_kernel_stack_addr = smallest_address(&[MemoryType::KernelStack], &memory_map)?;
     let smallest_kernel_data_addr =
@@ -137,7 +138,7 @@ pub(super) fn setup<'a>(
         for page in 0..desc.num_pages {
             let physical_address = desc.phys_start + page * PAGE_SIZE as u64;
             let virtual_address = virtual_base + physical_base + page * PAGE_SIZE as u64;
-            manager
+            owned_manager
                 .map_memory(virtual_address, physical_address, page_entry_flags)
                 .map_err(PagingError::from)?;
         }
@@ -169,15 +170,16 @@ pub(super) fn setup<'a>(
     };
 
     // update pmm memory map and bit map pointer to use mapped virtual addresses
-    let old_pmm_bit_map_buffer_address = manager.pmm().bit_map_buffer_address();
+    let old_pmm_bit_map_buffer_address = owned_manager.pmm().bit_map_buffer_address();
 
     unsafe {
-        manager.pmm().update(
+        owned_manager.pmm().update(
             old_pmm_bit_map_buffer_address + VIRTUAL_PHYSICAL_BASE,
             memory_map.descriptors as u64 - smallest_kernel_data_addr + VIRTUAL_DATA_BASE,
         );
     }
 
+    let manager = owned_manager.manager();
     // update page table addresses to virtual ones
     unsafe {
         manager.update_offset(VIRTUAL_PHYSICAL_BASE);
@@ -190,7 +192,7 @@ pub(super) fn setup<'a>(
 
     // todo: free reserved loader page tables, since they are no longer needed
 
-    Ok((manager, boot_info))
+    Ok((owned_manager, boot_info))
 }
 
 /// Switches to the new paging scheme specified by the pml4 address.
@@ -207,6 +209,7 @@ pub(crate) enum PagingError {
     Pml4PointerMisaligned,
     InvalidMemoryMap,
     GlobalPageTableManagerUninitialized,
+    AddressNotMapped(u64),
 }
 
 impl Debug for PagingError {
@@ -225,6 +228,9 @@ impl Debug for PagingError {
                 f,
                 "Paging Error: Global page table manager has not been initialized."
             ),
+            PagingError::AddressNotMapped(address) => {
+                write!(f, "Paging Error: Address not mapped: {:#x}", address)
+            }
         }
     }
 }

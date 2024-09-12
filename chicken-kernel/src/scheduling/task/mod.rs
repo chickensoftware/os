@@ -1,8 +1,10 @@
 use alloc::string::String;
 
+use chicken_util::memory::VirtualAddress;
+
 use crate::{
     base::interrupts::without_interrupts,
-    scheduling::{SCHEDULER, SchedulerError},
+    scheduling::{SchedulerError, SCHEDULER},
 };
 
 pub(crate) mod process;
@@ -19,7 +21,7 @@ impl JoinHandle {
         Ok(JoinHandle { tid })
     }
 
-    pub(in crate::scheduling) fn into_inner(self) -> u64  {
+    pub(in crate::scheduling) fn into_inner(self) -> u64 {
         self.tid
     }
 }
@@ -47,7 +49,7 @@ pub(crate) fn spawn_thread(
 }
 
 /// Spawns a new process.
-pub(crate) fn spawn_process(entry: fn(), name: Option<String>) -> Result<(), SchedulerError> {
+pub(crate) fn spawn_process(entry: TaskEntry, name: Option<String>) -> Result<(), SchedulerError> {
     without_interrupts(|| -> Result<(), SchedulerError> {
         let mut scheduler = SCHEDULER.lock();
         assert!(
@@ -57,4 +59,15 @@ pub(crate) fn spawn_process(entry: fn(), name: Option<String>) -> Result<(), Sch
         let scheduler = scheduler.get_mut().unwrap();
         scheduler.add_task(name, entry)
     })
+}
+#[derive(Debug)]
+pub(crate) struct ProgramData {
+    pub(crate) virt_start: VirtualAddress,
+    pub(crate) virt_end: VirtualAddress,
+}
+
+#[derive(Debug)]
+pub(crate) enum TaskEntry {
+    Kernel(fn()),
+    User(ProgramData),
 }

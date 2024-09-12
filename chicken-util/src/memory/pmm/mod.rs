@@ -7,8 +7,8 @@ use core::{
 
 use crate::{
     memory::{
-        MemoryDescriptor, MemoryMap, MemoryType, paging::manager::PageTableManager,
-        PhysicalAddress, pmm::bit_map::BitMap,
+        paging::manager::OwnedPageTableManager, pmm::bit_map::BitMap, MemoryDescriptor, MemoryMap,
+        MemoryType, PhysicalAddress,
     },
     PAGE_SIZE,
 };
@@ -264,8 +264,8 @@ impl PageFrameAllocator<'_> {
     }
 }
 
-impl<'a> From<PageTableManager<'a>> for PageFrameAllocator<'a> {
-    fn from(value: PageTableManager<'a>) -> Self {
+impl<'a> From<OwnedPageTableManager<'a>> for PageFrameAllocator<'a> {
+    fn from(value: OwnedPageTableManager<'a>) -> Self {
         value.page_frame_allocator
     }
 }

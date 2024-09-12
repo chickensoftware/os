@@ -1,18 +1,18 @@
 use chicken_util::{
-    BootInfo,
     memory::{
-        MemoryMap,
-        MemoryType,
-        paging::{KERNEL_MAPPING_OFFSET, KERNEL_STACK_MAPPING_OFFSET}, pmm::PageFrameAllocator, VirtualAddress,
+        paging::{KERNEL_MAPPING_OFFSET, KERNEL_STACK_MAPPING_OFFSET},
+        pmm::PageFrameAllocator,
+        MemoryMap, MemoryType, VirtualAddress,
     },
+    BootInfo,
 };
 
 use crate::memory::{
-    kheap::{KERNEL_HEAP_PAGE_COUNT, LockedHeap, VIRTUAL_KERNEL_HEAP_BASE},
-    paging::{GlobalPageTableManager, smallest_address, VIRTUAL_DATA_BASE, VIRTUAL_PHYSICAL_BASE},
+    kheap::{LockedHeap, KERNEL_HEAP_PAGE_COUNT, VIRTUAL_KERNEL_HEAP_BASE},
+    paging::{smallest_address, GlobalPageTableManager, VIRTUAL_DATA_BASE, VIRTUAL_PHYSICAL_BASE},
     vmm::{
-        AllocationType, GlobalVirtualMemoryManager, object::VmFlags, VIRTUAL_VMM_BASE, VMM,
-        VMM_PAGE_COUNT, VmmError,
+        object::VmFlags, AllocationType, GlobalVirtualMemoryManager, VmmError, VIRTUAL_VMM_BASE,
+        VMM, VMM_PAGE_COUNT,
     },
 };
 
@@ -27,14 +27,17 @@ pub(super) fn set_up(boot_info: &BootInfo) -> BootInfo {
     let pmm = unsafe { (boot_info.pmm_address as *const PageFrameAllocator).read() };
 
     // set up paging
-    let (manager, mut boot_info) = paging::setup(pmm, boot_info).unwrap();
+    let (mut owned_manager, mut boot_info) = paging::setup(pmm, boot_info).unwrap();
+    let manager = owned_manager.manager();
     let pml4 = manager.pml4_physical() as u64;
 
     // switch to new paging scheme
-    unsafe { paging::enable(pml4); }
+    unsafe {
+        paging::enable(pml4);
+    }
 
     // initialize static global page table manager
-    GlobalPageTableManager::init(manager);
+    GlobalPageTableManager::init(owned_manager);
 
     // initialize kernel heap
     LockedHeap::init(VIRTUAL_KERNEL_HEAP_BASE, KERNEL_HEAP_PAGE_COUNT).unwrap();

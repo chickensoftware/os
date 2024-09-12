@@ -6,18 +6,35 @@ use alloc::{
 };
 use core::{alloc::Layout, ptr, ptr::NonNull};
 
-use chicken_util::{memory::paging::PageTable, PAGE_SIZE};
+use chicken_util::{
+    memory::{
+        paging::{
+            index::PageMapIndexer,
+            manager::{OwnedPageTableManager, PageTableManager},
+            PageEntryFlags, PageTable,
+        },
+        VirtualAddress,
+    },
+    PAGE_SIZE,
+};
 
-use crate::{memory::{
-    paging::{PagingError, PTM},
-    vmm::{AllocationType, object::VmFlags, VMM, VmmError},
-}, scheduling::{SchedulerError, task::thread::Thread}};
-use crate::scheduling::task::thread::ThreadStatus;
+use super::TaskEntry;
+use crate::{
+    memory::{
+        paging::{PagingError, PTM},
+        vmm::{object::VmFlags, AllocationType, VmmError, VMM},
+    },
+    print, println,
+    scheduling::{
+        task::thread::{Thread, ThreadStatus},
+        SchedulerError,
+    },
+};
 
 const MAIN_THREAD_NAME: &str = "MAIN-";
 #[derive(Debug)]
 pub(crate) struct Process {
-    pub(in crate::scheduling) page_table_mappings: *const PageTable,
+    pub(in crate::scheduling) page_table_mappings_virtual: *const PageTable,
     // whether the kernel page mappings should be copied when switching from one process to another. For now always true.
     pub(in crate::scheduling) update_kernel_mappings: bool,
 
@@ -28,6 +45,7 @@ pub(crate) struct Process {
     pub(in crate::scheduling) pid: u64,
     pub(in crate::scheduling) status: TaskStatus,
     pub(in crate::scheduling) name: String,
+    pub(in crate::scheduling) user: bool,
 
     pub(in crate::scheduling) next: Option<NonNull<Process>>,
     pub(in crate::scheduling) prev: Option<NonNull<Process>>,
@@ -38,11 +56,11 @@ impl Process {
     /// Allocates memory on the heap for new process and initializes it. Returns the new task or an error code if the initialization failed.
     pub(in crate::scheduling) fn create(
         name: String,
-        entry: fn(),
+        entry: TaskEntry,
         pid: u64,
     ) -> Result<Option<NonNull<Self>>, SchedulerError> {
         // set up new page table mappings
-        let pml4 = allocate_page_mappings()?;
+        let (pml4, entry_address) = allocate_page_mappings(&entry)?;
 
         // initialize new process
         let default = Process::empty();
@@ -52,10 +70,15 @@ impl Process {
         process_ref.name = name;
         process_ref.pid = pid;
         process_ref.status = TaskStatus::Ready;
-        process_ref.page_table_mappings = pml4;
+        process_ref.page_table_mappings_virtual = pml4;
+        process_ref.user = if let TaskEntry::User(_) = entry {
+            true
+        } else {
+            false
+        };
 
         // set up main thread
-        process_ref.add_thread(Some(format!("{}{}", MAIN_THREAD_NAME, pid)), entry)?;
+        process_ref.add_thread(Some(format!("{}{}", MAIN_THREAD_NAME, pid)), entry_address)?;
 
         Ok(process)
     }
@@ -66,11 +89,12 @@ impl Process {
             next: None,
             prev: None,
             pid: 0,
-            page_table_mappings: ptr::null_mut(),
+            page_table_mappings_virtual: ptr::null_mut(),
             thread_id_counter: 0,
             active_thread: None,
             name: "".to_string(),
             main_thread: None,
+            user: false,
             // always update higher half mappings when switching processes
             // note: may be exchanged by a more efficient approach, that only updates the mappings if necessary, in the future.
             update_kernel_mappings: true,
@@ -112,6 +136,7 @@ impl Process {
                 entry,
                 self.thread_id_counter,
                 self.pid,
+                self.user,
             )?;
             self.main_thread = thread_ptr;
             self.active_thread = self.main_thread;
@@ -127,6 +152,7 @@ impl Process {
                     entry,
                     self.thread_id_counter,
                     self.pid,
+                    self.user,
                 )?;
                 let thread = unsafe { thread_ptr.unwrap().as_mut() };
                 thread.prev = current;
@@ -276,7 +302,7 @@ impl Process {
     }
 }
 
-/// Copies higher half mappings from one page-table manager to another.
+/// Copies higher half mappings from one page-table manager to another. Takes the virtual addresses of the root page tables.
 ///
 /// # Safety
 /// The caller must ensure that both addresses are mapped and point to valid page tables.
@@ -299,34 +325,89 @@ pub(in crate::scheduling) unsafe fn copy_higher_half_mappings(
     Ok(())
 }
 
-/// Allocate new page table mappings. Copies the higher half mappings from the global page table manager. Returns the address to the new pml4 table or an error value. The caller is responsible fpr freeing the memory allocated.
-fn allocate_page_mappings() -> Result<*const PageTable, SchedulerError> {
-    // get page table size
-    let current_pml4 = {
-        let mut binding = PTM.lock();
-        if let Some(ptm) = binding.get_mut() {
-            Ok(ptm.pml4_virtual())
-        } else {
-            Err(SchedulerError::PageTableManagerError(
-                PagingError::GlobalPageTableManagerUninitialized,
-            ))
-        }
-    }?;
+/// Copies the specified range of virtual memory mappings from one page-table manager to another.
+///
+/// # Safety
+/// The caller must ensure that the addresses are mapped and point to valid page tables, as well as the fact that the virtual address range is valid and mapped in the source table.
+pub(in crate::scheduling) unsafe fn map_user_process_from_active(
+    active_manager: &mut OwnedPageTableManager,
+    dst_pml4_virtual: *mut PageTable,
+    virt_start: VirtualAddress,
+    virt_end: VirtualAddress,
+) {
+    let (active_manager, pmm) = active_manager.get();
+    let dst_pml4_physical = active_manager
+        .get_physical(dst_pml4_virtual as VirtualAddress)
+        .expect("User program must be mapped into active process before being loaded.")
+        as *mut PageTable;
 
-    let mut binding = VMM.lock();
-    if let Some(vmm) = binding.get_mut() {
-        let new_pml4 =
-            vmm.alloc(PAGE_SIZE, VmFlags::WRITE, AllocationType::AnyPages)? as *mut PageTable;
-
-        unsafe {
-            copy_higher_half_mappings(current_pml4, new_pml4)?;
-        }
-        Ok(new_pml4)
-    } else {
-        Err(SchedulerError::MemoryAllocationError(
-            VmmError::GlobalVirtualMemoryManagerUninitialized,
-        ))
+    let mut temp_manager = PageTableManager::new(dst_pml4_physical);
+    unsafe {
+        temp_manager.update_pml4_virtual(dst_pml4_virtual as VirtualAddress);
+        temp_manager.update_offset(active_manager.offset());
     }
+
+    assert!(virt_start < virt_end, "Copied page table mapping range must be valid: start index must be smaller than end index.");
+    for virtual_address in (virt_start..virt_end).step_by(PAGE_SIZE) {
+        let (physical_address, flags) = active_manager
+            .get_entry_data(virtual_address)
+            .expect("User program must be mapped into active process before being loaded.");
+
+        assert!(
+            flags.contains(PageEntryFlags::USER_SUPER),
+            "Mapped user program must contain USER_SUPER flag."
+        );
+        // todo: proper error handling
+        temp_manager
+            .map_memory(virtual_address, physical_address, flags, pmm)
+            .unwrap();
+
+        println!(
+            "current: phys: {:#x} to virt: {:#x} with flags: {:?}",
+            physical_address, virtual_address, flags
+        );
+    }
+}
+
+/// Allocate new page table mappings. Copies the higher half mappings from the global page table manager. Returns the address to the new pml4 table and the mapped task entry pointer or an error value. The caller is responsible fpr freeing the memory allocated.
+fn allocate_page_mappings(entry: &TaskEntry) -> Result<(*const PageTable, fn()), SchedulerError> {
+    let mut binding = VMM.lock();
+    if binding.get_mut().is_none() {
+        return Err(SchedulerError::MemoryAllocationError(
+            VmmError::GlobalVirtualMemoryManagerUninitialized,
+        ));
+    }
+
+    // VMM is unlocked on drop
+    let new_pml4 = {
+        let vmm = binding.get_mut().unwrap();
+        vmm.alloc(PAGE_SIZE, VmFlags::WRITE, AllocationType::AnyPages)? as *mut PageTable
+    };
+    // PTM must have been initialized at this point.
+    assert!(
+        PTM.lock().get().is_some(),
+        "Global page table manager must have been initialized after using VMM."
+    );
+    let mut binding = PTM.lock();
+    let owned_maanger = binding.get_mut().unwrap();
+    let current_pml4 = owned_maanger.manager().pml4_virtual();
+
+    unsafe {
+        copy_higher_half_mappings(current_pml4, new_pml4)?;
+    }
+    crate::println!("before");
+    let address = match entry {
+        TaskEntry::Kernel(pointer) => *pointer,
+        TaskEntry::User(data) => unsafe {
+            println!("NOW");
+            map_user_process_from_active(owned_maanger, new_pml4, data.virt_start, data.virt_end);
+            core::mem::transmute::<u64, fn()>(data.virt_start)
+        },
+    };
+
+    crate::println!("successs");
+
+    Ok((new_pml4, address))
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

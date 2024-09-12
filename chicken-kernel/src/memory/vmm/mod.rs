@@ -18,7 +18,10 @@ use crate::{
         paging::{PagingError, PTM},
         vmm::object::{VmFlags, VmObject},
     },
-    scheduling::spin::{Guard, SpinLock},
+    scheduling::{
+        spin::{Guard, SpinLock},
+        SchedulerError,
+    },
 };
 
 pub(in crate::memory) const VIRTUAL_VMM_BASE: u64 = 0xFFFF_FFFF_C000_0000;
@@ -188,9 +191,12 @@ impl VirtualMemoryManager {
                     let page_count = current_ref.length / PAGE_SIZE;
                     // free regions in vmm memory segment
                     for page in 0..page_count {
+                        let virtual_address = address + (page * PAGE_SIZE) as u64;
                         // unmap virtual address
                         let physical_address = ptm
-                            .unmap(address + (page * PAGE_SIZE) as u64)
+                            .manager()
+                            .unmap(virtual_address)
+                            .ok_or(PagingError::AddressNotMapped(virtual_address))
                             .map_err(VmmError::from)?;
 
                         // free physical page frames

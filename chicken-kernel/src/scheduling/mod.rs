@@ -6,27 +6,36 @@ use alloc::{
 };
 use core::{
     alloc::Layout,
+    arch::asm,
     cell::OnceCell,
     error::Error,
     fmt::{Debug, Display, Formatter},
     ptr::NonNull,
 };
-use core::arch::asm;
-use chicken_util::memory::{paging::PageTable, VirtualAddress};
 
-use crate::{base::interrupts::{CpuState, without_interrupts}, hlt_loop, main_task, memory::{
-    paging,
-    paging::{PagingError, PTM},
-    vmm::{VMM, VmmError},
-}, scheduling::{
-    spin::{Guard, SpinLock},
-    task::{
-        JoinHandle,
-        process::{copy_higher_half_mappings, NextThread, Process, TaskStatus},
+use chicken_util::memory::{paging::PageTable, VirtualAddress};
+use task::TaskEntry;
+
+use crate::{
+    base::{
+        interrupts::{without_interrupts, CpuState},
+        io::timer::pit::get_current_uptime_ms,
     },
-}};
-use crate::base::io::timer::pit::get_current_uptime_ms;
-use crate::scheduling::task::thread::ThreadStatus;
+    hlt_loop, main_task,
+    memory::{
+        paging::{self, PagingError, PTM},
+        vmm::{VmmError, VMM},
+    },
+    println,
+    scheduling::{
+        spin::{Guard, SpinLock},
+        task::{
+            process::{copy_higher_half_mappings, NextThread, Process, TaskStatus},
+            thread::ThreadStatus,
+            JoinHandle,
+        },
+    },
+};
 pub(crate) mod spin;
 pub(crate) mod task;
 
@@ -164,8 +173,8 @@ impl TaskScheduler {
             id_counter: 0,
         };
 
-        instance.add_task(Some("IDLE-TASK".to_string()), idle)?;
-        instance.add_task(Some("MAIN-TASK".to_string()), main_task)?;
+        instance.add_task(Some("IDLE-TASK".to_string()), TaskEntry::Kernel(idle))?;
+        instance.add_task(Some("MAIN-TASK".to_string()), TaskEntry::Kernel(main_task))?;
 
         Ok(instance)
     }
@@ -233,7 +242,47 @@ impl TaskScheduler {
                 idle_ref.active_thread_mut().status = ThreadStatus::Running;
             }
 
+            // switch to other paging scheme
+            let mut binding = PTM.lock();
+            assert!(
+                binding.get().is_some(),
+                "PTM must be set up when calling scheduler."
+            );
+            let owned_manager = binding.get_mut().unwrap();
+            let manager = owned_manager.manager();
+
+            // copy higher half page tables if kernel mappings have been changed by current process
+            if idle_ref.update_kernel_mappings {
+                unsafe {
+                    copy_higher_half_mappings(
+                        manager.pml4_virtual(),
+                        idle_ref.page_table_mappings_virtual as *mut PageTable,
+                    )
+                    .unwrap();
+                }
+            }
+            let new_mappings_virtual = idle_ref.page_table_mappings_virtual as VirtualAddress;
+            let new_mappings_physical =
+                manager.get_physical(idle_ref.page_table_mappings_virtual as VirtualAddress);
+
+            assert!(
+                new_mappings_physical.is_some(),
+                "Page table mappings of each process must be set up."
+            );
+            let new_mappings_physical = new_mappings_physical.unwrap();
+            unsafe {
+                paging::enable(new_mappings_physical);
+            }
+            let ptm = binding.get_mut().unwrap();
+            let manager = ptm.manager();
+            unsafe {
+                manager.update_pml4_physical(new_mappings_physical);
+                manager.update_pml4_virtual(new_mappings_virtual);
+            }
+
+            PTM.unlock();
             self.active_task = idle;
+
             unsafe { idle_ref.active_thread_mut().context }
         }
     }
@@ -253,7 +302,7 @@ impl TaskScheduler {
             if active_task.status != TaskStatus::Dead {
                 // only one active task left => short circuit
                 if active_task.pid == next_active_task_ref.pid {
-                   return context;
+                    return context;
                 }
 
                 active_task.status = TaskStatus::Ready;
@@ -269,21 +318,21 @@ impl TaskScheduler {
                 binding.get().is_some(),
                 "PTM must be set up when calling scheduler."
             );
-            let manager = binding.get_mut().unwrap();
+            let owned_manager = binding.get_mut().unwrap();
 
             // copy higher half page tables if kernel mappings have been changed by current process
             if active_task.update_kernel_mappings {
                 unsafe {
                     copy_higher_half_mappings(
-                        manager.pml4_virtual(),
-                        next_active_task_ref.page_table_mappings as *mut PageTable,
+                        owned_manager.manager().pml4_virtual(),
+                        next_active_task_ref.page_table_mappings_virtual as *mut PageTable,
                     )
                     .unwrap();
                 }
             }
-            let new_mappings_virtual = next_active_task_ref.page_table_mappings as VirtualAddress;
-            let new_mappings_physical =
-                manager.get_physical(next_active_task_ref.page_table_mappings as VirtualAddress);
+            let new_mappings_virtual =
+                next_active_task_ref.page_table_mappings_virtual as VirtualAddress;
+            let new_mappings_physical = owned_manager.manager().get_physical(new_mappings_virtual);
 
             assert!(
                 new_mappings_physical.is_some(),
@@ -294,11 +343,30 @@ impl TaskScheduler {
                 paging::enable(new_mappings_physical);
             }
             let ptm = binding.get_mut().unwrap();
+            let manager = ptm.manager();
             unsafe {
-                ptm.update_pml4(new_mappings_physical);
-                ptm.update_pml4_virtual(new_mappings_virtual);
+                manager.update_pml4_physical(new_mappings_physical);
+                manager.update_pml4_virtual(new_mappings_virtual);
             }
+
             PTM.unlock();
+
+            if next_active_task_ref.user {
+                println!("conext: {:?}", unsafe {
+                    next_active_task_ref
+                        .main_thread
+                        .unwrap()
+                        .as_ref()
+                        .context
+                        .as_ref()
+                        .unwrap()
+                });
+
+                println!("Looping before switching to user task.");
+
+                loop {}
+            }
+
             unsafe { next_active_task_ref.main_thread.unwrap().as_ref().context }
         } else {
             context
@@ -325,7 +393,6 @@ impl TaskScheduler {
                 // remove dead task
                 TaskStatus::Dead => self.remove_task(current_ref.pid).unwrap(),
                 TaskStatus::Running => {}
-
             }
 
             // round-robin
@@ -342,7 +409,7 @@ impl TaskScheduler {
 
 impl TaskScheduler {
     /// Appends a task to the list of tasks.
-    fn add_task(&mut self, name: Option<String>, entry: fn()) -> Result<(), SchedulerError> {
+    fn add_task(&mut self, name: Option<String>, entry: TaskEntry) -> Result<(), SchedulerError> {
         let mut current = self.head;
 
         // every task ever created has a unique ID
@@ -370,6 +437,7 @@ impl TaskScheduler {
                 task.prev = current;
 
                 current_task.next = task_ptr;
+                println!("spawning process: {:?}", task);
                 return Ok(());
             }
             current = current_task.next;
@@ -438,7 +506,7 @@ impl TaskScheduler {
                     ))?;
 
                 // free the process's page tables
-                let pml4_address = current_ref.page_table_mappings as u64;
+                let pml4_address = current_ref.page_table_mappings_virtual as u64;
                 vmm.free(pml4_address).map_err(SchedulerError::from)?;
 
                 return Ok(());

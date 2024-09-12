@@ -5,24 +5,23 @@ use alloc::{
 };
 use core::ptr;
 
+use chicken_util::{
+    memory::{
+        paging::{
+            manager::OwnedPageTableManager, PageEntryFlags, PageTable, KERNEL_STACK_MAPPING_OFFSET,
+        },
+        pmm::{PageFrameAllocator, PageFrameAllocatorError},
+        PhysicalAddress, VirtualAddress,
+    },
+    PAGE_SIZE,
+};
 use uefi::{
     prelude::BootServices,
     table::{
         boot::{AllocateType::AnyPages, MemoryType},
-        Boot,
-        cfg::{ACPI2_GUID, ACPI_GUID}, SystemTable,
+        cfg::{ACPI2_GUID, ACPI_GUID},
+        Boot, SystemTable,
     },
-};
-
-use chicken_util::{
-    memory::{
-        paging::{
-            KERNEL_STACK_MAPPING_OFFSET, manager::PageTableManager, PageEntryFlags, PageTable,
-        },
-        PhysicalAddress,
-        pmm::{PageFrameAllocator, PageFrameAllocatorError}, VirtualAddress,
-    },
-    PAGE_SIZE,
 };
 
 use crate::{ChickenMemoryDescriptor, ChickenMemoryMap, KERNEL_MAPPING_OFFSET, KERNEL_STACK_SIZE};
@@ -112,7 +111,7 @@ pub(super) fn set_up_address_space(
     // zero out new table
     unsafe { ptr::write_bytes(pml4_table, 0, 1) };
 
-    let mut manager = PageTableManager::new(pml4_table, pmm);
+    let mut manager = OwnedPageTableManager::new(pml4_table, pmm);
     let first_addr = memory_map.first_addr;
     let last_addr = memory_map.last_addr;
     let page_count = ((last_addr - first_addr) as usize + PAGE_SIZE - 1) / PAGE_SIZE;
