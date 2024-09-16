@@ -2,7 +2,7 @@ use core::cell::OnceCell;
 
 use bitflags::bitflags;
 
-use crate::{println, scheduling::spin::SpinLock};
+use crate::scheduling::spin::SpinLock;
 
 pub(crate) const KERNEL_CS: u16 = 0x08;
 // note: data segment is also used for stack allocation of new kernel processes.
@@ -92,23 +92,21 @@ impl SegmentDescriptor {
                 | AccessByte::DPL
                 | AccessByte::DESCRIPTOR_TYPE
                 | AccessByte::EXECUTABLE
-                | AccessByte::CONFORMING_DIRECTION,
+                | AccessByte::READABLE_WRITEABLE,
             SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
         )
     }
 
     fn user_data() -> Self {
-        let test = SegmentDescriptor::new(
+        SegmentDescriptor::new(
             0,
             0xFFFFF,
             AccessByte::PRESENT
                 | AccessByte::DPL
                 | AccessByte::DESCRIPTOR_TYPE
-                | AccessByte::CONFORMING_DIRECTION,
+                | AccessByte::READABLE_WRITEABLE,
             SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
-        );
-        println!("test: {:#b}", test.access.bits());
-        test
+        )
     }
 }
 

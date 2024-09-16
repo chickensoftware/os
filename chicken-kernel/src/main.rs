@@ -11,7 +11,7 @@ use chicken_util::{
     BootInfo, PAGE_SIZE,
 };
 use memory::paging::PTM;
-use qemu_print::{qemu_print, qemu_println};
+use qemu_print::qemu_println;
 use scheduling::task::{ProgramData, TaskEntry};
 
 use crate::{
@@ -43,11 +43,11 @@ pub(crate) fn main_task() {
     println!("Hello, from main task!");
 
     fn hello() {
-        println!("Hello");
+        println!("Hello, from new main task thread.");
 
         GlobalTaskScheduler::sleep(10000);
 
-        println!("Complete");
+        println!("Main task thread sleep complete.");
 
         GlobalTaskScheduler::kill_active();
     }

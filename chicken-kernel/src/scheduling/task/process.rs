@@ -9,7 +9,6 @@ use core::{alloc::Layout, ptr, ptr::NonNull};
 use chicken_util::{
     memory::{
         paging::{
-            index::PageMapIndexer,
             manager::{OwnedPageTableManager, PageTableManager},
             PageEntryFlags, PageTable,
         },
@@ -24,7 +23,7 @@ use crate::{
         paging::{PagingError, PTM},
         vmm::{object::VmFlags, AllocationType, VmmError, VMM},
     },
-    print, println,
+    println,
     scheduling::{
         task::thread::{Thread, ThreadStatus},
         SchedulerError,
@@ -71,11 +70,7 @@ impl Process {
         process_ref.pid = pid;
         process_ref.status = TaskStatus::Ready;
         process_ref.page_table_mappings_virtual = pml4;
-        process_ref.user = if let TaskEntry::User(_) = entry {
-            true
-        } else {
-            false
-        };
+        process_ref.user = matches!(entry, TaskEntry::User(_));
 
         // set up main thread
         process_ref.add_thread(Some(format!("{}{}", MAIN_THREAD_NAME, pid)), entry_address)?;
@@ -395,17 +390,13 @@ fn allocate_page_mappings(entry: &TaskEntry) -> Result<(*const PageTable, fn()),
     unsafe {
         copy_higher_half_mappings(current_pml4, new_pml4)?;
     }
-    crate::println!("before");
     let address = match entry {
         TaskEntry::Kernel(pointer) => *pointer,
         TaskEntry::User(data) => unsafe {
-            println!("NOW");
             map_user_process_from_active(owned_maanger, new_pml4, data.virt_start, data.virt_end);
             core::mem::transmute::<u64, fn()>(data.virt_start)
         },
     };
-
-    crate::println!("successs");
 
     Ok((new_pml4, address))
 }

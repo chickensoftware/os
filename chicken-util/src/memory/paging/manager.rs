@@ -142,15 +142,16 @@ impl PageTableManager {
     ) -> Result<(), PageFrameAllocatorError> {
         let indexer = PageMapIndexer::new(virtual_memory);
         let page_map_level4 = self.pml4_virtual();
+        let user = flags.contains(PageEntryFlags::USER_SUPER);
         // Map Level 3
         let page_map_level3 =
-            self.get_or_create_next_table(page_map_level4, indexer.pdp_i(), pmm)?;
+            self.get_or_create_next_table(page_map_level4, indexer.pdp_i(), pmm, user)?;
         // Map Level 2
         let page_map_level2 =
-            self.get_or_create_next_table(page_map_level3, indexer.pd_i(), pmm)?;
+            self.get_or_create_next_table(page_map_level3, indexer.pd_i(), pmm, user)?;
         // Map Level 1
         let page_map_level1 =
-            self.get_or_create_next_table(page_map_level2, indexer.pt_i(), pmm)?;
+            self.get_or_create_next_table(page_map_level2, indexer.pt_i(), pmm, user)?;
 
         let page_entry = &mut unsafe { &mut *page_map_level1 }.entries[indexer.p_i() as usize];
 
@@ -206,10 +207,15 @@ impl PageTableManager {
         current_table: *mut PageTable,
         index: u64,
         pmm: &mut PageFrameAllocator,
+        user: bool,
     ) -> Result<*mut PageTable, PageFrameAllocatorError> {
         let entry = &mut unsafe { &mut *current_table }.entries[index as usize];
 
         if entry.flags().contains(PageEntryFlags::PRESENT) {
+            // path to entry user accessible as well
+            if user && !entry.flags().contains(PageEntryFlags::USER_SUPER) {
+                entry.set_flags(entry.flags() | PageEntryFlags::USER_SUPER);
+            }
             Ok((entry.address() + self.offset) as *mut PageTable)
         } else {
             let new_page = pmm.request_page()?;
@@ -220,7 +226,15 @@ impl PageTableManager {
             }
 
             entry.set_address(new_page);
-            entry.set_flags(PageEntryFlags::PRESENT | PageEntryFlags::READ_WRITE);
+            entry.set_flags(
+                PageEntryFlags::PRESENT
+                    | PageEntryFlags::READ_WRITE
+                    | if user {
+                        PageEntryFlags::USER_SUPER
+                    } else {
+                        PageEntryFlags::empty()
+                    },
+            );
 
             Ok(new_table)
         }

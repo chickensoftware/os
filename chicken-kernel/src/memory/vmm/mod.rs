@@ -18,10 +18,7 @@ use crate::{
         paging::{PagingError, PTM},
         vmm::object::{VmFlags, VmObject},
     },
-    scheduling::{
-        spin::{Guard, SpinLock},
-        SchedulerError,
-    },
+    scheduling::spin::{Guard, SpinLock},
 };
 
 pub(in crate::memory) const VIRTUAL_VMM_BASE: u64 = 0xFFFF_FFFF_C000_0000;
