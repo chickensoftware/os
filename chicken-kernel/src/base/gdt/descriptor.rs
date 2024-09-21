@@ -1,6 +1,9 @@
 use core::fmt::LowerHex;
 
-use super::{tss::TaskStateSegment, AccessByte, SegmentDescriptorFlags};
+use super::{
+    tss::{TaskStateSegment, TSS_AVAILABLE_FLAGS},
+    AccessByte, SegmentDescriptorFlags,
+};
 
 #[repr(C, packed)]
 #[derive(Debug, Copy, Clone, Default)]
@@ -75,6 +78,28 @@ impl SegmentDescriptor {
                 | AccessByte::ACCESSED,
             SegmentDescriptorFlags::GRANULARITY | SegmentDescriptorFlags::SIZE,
         )
+    }
+    /// Return the low and high segment descriptors pointing to the specified tss.
+    ///
+    /// # Safety
+    /// Caller must ensure that tss lives long enough.
+    pub(super) unsafe fn tss(tss: &TaskStateSegment) -> (Self, Self) {
+        let tss_address = tss as *const TaskStateSegment as u64;
+        let low = SegmentDescriptor::new(
+            tss_address as u32,
+            (size_of::<TaskStateSegment>() - 1) as u32,
+            AccessByte::from_bits_truncate(AccessByte::PRESENT.bits() | TSS_AVAILABLE_FLAGS),
+            SegmentDescriptorFlags::empty(),
+        );
+
+        let high = SegmentDescriptor::new(
+            (tss_address >> 32) as u32,
+            0,
+            AccessByte::empty(),
+            SegmentDescriptorFlags::empty(),
+        );
+
+        (low, high)
     }
 }
 

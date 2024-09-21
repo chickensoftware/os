@@ -35,7 +35,6 @@ pub(super) fn initialize() {
     };
     unsafe {
         load_gdt(&gdt_desc as *const GdtDescriptor);
-        crate::println!("debug: loaded gdt");
         load_tss();
     }
 }
@@ -56,6 +55,8 @@ struct GlobalDescriptorTable {
     kernel_data: SegmentDescriptor,
     user_code: SegmentDescriptor,
     user_data: SegmentDescriptor,
+    tss_low: SegmentDescriptor,
+    tss_high: SegmentDescriptor,
 }
 
 impl GlobalDescriptorTable {
@@ -63,6 +64,7 @@ impl GlobalDescriptorTable {
         // initialize tss
         let binding = TSS.lock();
         let tss = binding.get_or_init(|| unsafe { TaskStateSegment::create() });
+        let (tss_low, tss_high) = unsafe { SegmentDescriptor::tss(&tss) };
 
         GlobalDescriptorTable {
             null: SegmentDescriptor::default(),
@@ -70,6 +72,8 @@ impl GlobalDescriptorTable {
             kernel_data: SegmentDescriptor::kernel_data(),
             user_code: SegmentDescriptor::user_code(),
             user_data: SegmentDescriptor::user_data(),
+            tss_low,
+            tss_high,
         }
     }
 }
