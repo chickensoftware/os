@@ -1,3 +1,5 @@
+use core::fmt::LowerHex;
+
 use super::{tss::TaskStateSegment, AccessByte, SegmentDescriptorFlags};
 
 #[repr(C, packed)]
@@ -31,7 +33,8 @@ impl SegmentDescriptor {
             AccessByte::PRESENT
                 | AccessByte::DESCRIPTOR_TYPE
                 | AccessByte::EXECUTABLE
-                | AccessByte::READABLE_WRITEABLE,
+                | AccessByte::READABLE_WRITEABLE
+                | AccessByte::ACCESSED,
             SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
         )
     }
@@ -39,8 +42,11 @@ impl SegmentDescriptor {
         SegmentDescriptor::new(
             0,
             0xFFFFF,
-            AccessByte::PRESENT | AccessByte::DESCRIPTOR_TYPE | AccessByte::READABLE_WRITEABLE,
-            SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
+            AccessByte::PRESENT
+                | AccessByte::DESCRIPTOR_TYPE
+                | AccessByte::READABLE_WRITEABLE
+                | AccessByte::ACCESSED,
+            SegmentDescriptorFlags::GRANULARITY | SegmentDescriptorFlags::SIZE,
         )
     }
 
@@ -52,7 +58,8 @@ impl SegmentDescriptor {
                 | AccessByte::DPL
                 | AccessByte::DESCRIPTOR_TYPE
                 | AccessByte::EXECUTABLE
-                | AccessByte::READABLE_WRITEABLE,
+                | AccessByte::READABLE_WRITEABLE
+                | AccessByte::ACCESSED,
             SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
         )
     }
@@ -64,8 +71,9 @@ impl SegmentDescriptor {
             AccessByte::PRESENT
                 | AccessByte::DPL
                 | AccessByte::DESCRIPTOR_TYPE
-                | AccessByte::READABLE_WRITEABLE,
-            SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
+                | AccessByte::READABLE_WRITEABLE
+                | AccessByte::ACCESSED,
+            SegmentDescriptorFlags::GRANULARITY | SegmentDescriptorFlags::SIZE,
         )
     }
 }
