@@ -1,8 +1,13 @@
 use core::cell::OnceCell;
 
 use bitflags::bitflags;
+use descriptor::SegmentDescriptor;
+use tss::{TaskStateSegment, TSS};
 
 use crate::scheduling::spin::SpinLock;
+
+mod descriptor;
+mod tss;
 
 pub(crate) const KERNEL_CS: u16 = 0x08;
 // note: data segment is also used for stack allocation of new kernel processes.
@@ -17,6 +22,7 @@ static GDT: SpinLock<OnceCell<GlobalDescriptorTable>> = SpinLock::new(OnceCell::
 
 extern "C" {
     fn load_gdt(gdt: *const GdtDescriptor);
+    fn load_tss();
 }
 
 pub(super) fn initialize() {
@@ -27,9 +33,10 @@ pub(super) fn initialize() {
         size: (size_of::<GlobalDescriptorTable>() - 1) as u16,
         offset: gdt as *const _ as u64,
     };
-
     unsafe {
         load_gdt(&gdt_desc as *const GdtDescriptor);
+        crate::println!("debug: loaded gdt");
+        load_tss();
     }
 }
 
@@ -38,76 +45,6 @@ pub(super) fn initialize() {
 struct GdtDescriptor {
     size: u16,
     offset: u64,
-}
-
-#[repr(C, packed)]
-#[derive(Debug, Copy, Clone, Default)]
-struct SegmentDescriptor {
-    limit_low: u16,
-    base_low: u16,
-    base_middle: u8,
-    access: AccessByte,
-    /// limit_high + flags
-    granularity: u8,
-    base_high: u8,
-}
-
-impl SegmentDescriptor {
-    fn new(base: u32, limit: u32, access: AccessByte, flags: SegmentDescriptorFlags) -> Self {
-        Self {
-            limit_low: (limit & 0xFFFF) as u16,
-            base_low: (base & 0xFFFF) as u16,
-            base_middle: ((base >> 16) & 0xFF) as u8,
-            access,
-            granularity: ((limit >> 16) & 0x0F) as u8 | (flags.bits() & 0xF0),
-            base_high: ((base >> 24) & 0xFF) as u8,
-        }
-    }
-
-    fn kernel_code() -> Self {
-        SegmentDescriptor::new(
-            0,
-            0xFFFFF,
-            AccessByte::PRESENT
-                | AccessByte::DESCRIPTOR_TYPE
-                | AccessByte::EXECUTABLE
-                | AccessByte::READABLE_WRITEABLE,
-            SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
-        )
-    }
-    fn kernel_data() -> Self {
-        SegmentDescriptor::new(
-            0,
-            0xFFFFF,
-            AccessByte::PRESENT | AccessByte::DESCRIPTOR_TYPE | AccessByte::READABLE_WRITEABLE,
-            SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
-        )
-    }
-
-    fn user_code() -> Self {
-        SegmentDescriptor::new(
-            0,
-            0xFFFFF,
-            AccessByte::PRESENT
-                | AccessByte::DPL
-                | AccessByte::DESCRIPTOR_TYPE
-                | AccessByte::EXECUTABLE
-                | AccessByte::READABLE_WRITEABLE,
-            SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
-        )
-    }
-
-    fn user_data() -> Self {
-        SegmentDescriptor::new(
-            0,
-            0xFFFFF,
-            AccessByte::PRESENT
-                | AccessByte::DPL
-                | AccessByte::DESCRIPTOR_TYPE
-                | AccessByte::READABLE_WRITEABLE,
-            SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
-        )
-    }
 }
 
 #[allow(dead_code)]
@@ -123,6 +60,10 @@ struct GlobalDescriptorTable {
 
 impl GlobalDescriptorTable {
     fn new() -> Self {
+        // initialize tss
+        let binding = TSS.lock();
+        let tss = binding.get_or_init(|| unsafe { TaskStateSegment::create() });
+
         GlobalDescriptorTable {
             null: SegmentDescriptor::default(),
             kernel_code: SegmentDescriptor::kernel_code(),
