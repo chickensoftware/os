@@ -108,9 +108,9 @@ fn allocate_stack(user: bool) -> Result<(VirtualAddress, VirtualAddress), Schedu
     let mut binding = VMM.lock();
     if let Some(vmm) = binding.get_mut() {
         let stack_bottom = vmm
-            .alloc(THREAD_STACK_SIZE, flags, AllocationType::AnyPages)
+            .alloc(THREAD_STACK_SIZE + 1, flags, AllocationType::AnyPages)
             .map_err(SchedulerError::from)?;
-        Ok((stack_bottom, stack_bottom + THREAD_STACK_SIZE as u64 - 1))
+        Ok((stack_bottom, stack_bottom + THREAD_STACK_SIZE as u64))
     } else {
         Err(SchedulerError::MemoryAllocationError(
             VmmError::GlobalVirtualMemoryManagerUninitialized,
