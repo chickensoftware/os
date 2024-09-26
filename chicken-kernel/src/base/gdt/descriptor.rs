@@ -1,5 +1,3 @@
-use core::fmt::LowerHex;
-
 use super::{
     tss::{TaskStateSegment, TSS_AVAILABLE_FLAGS},
     AccessByte, SegmentDescriptorFlags,
@@ -100,32 +98,5 @@ impl SegmentDescriptor {
         );
 
         (low, high)
-    }
-}
-
-#[repr(C, packed)]
-#[derive(Copy, Clone, Debug)]
-pub(super) struct SystemDescriptor {
-    low: SegmentDescriptor,
-    /// Upper 32 bits of the TSS base address
-    base_upper: u32,
-    reserved: u32,
-}
-
-impl SystemDescriptor {
-    fn tss(tss: &TaskStateSegment) -> SystemDescriptor {
-        let tss_address = tss as *const TaskStateSegment as u64;
-        let low = SegmentDescriptor::new(
-            tss_address as u32,
-            (size_of::<TaskStateSegment>() - 1) as u32,
-            AccessByte::PRESENT | AccessByte::EXECUTABLE | AccessByte::ACCESSED,
-            SegmentDescriptorFlags::GRANULARITY,
-        );
-
-        Self {
-            low,
-            base_upper: ((tss_address >> 32) as u32),
-            reserved: 0,
-        }
     }
 }

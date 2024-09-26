@@ -352,18 +352,7 @@ impl TaskScheduler {
             PTM.unlock();
 
             if next_active_task_ref.user {
-                println!("conext: {:?}", unsafe {
-                    next_active_task_ref
-                        .main_thread
-                        .unwrap()
-                        .as_ref()
-                        .context
-                        .as_ref()
-                        .unwrap()
-                });
-
-                println!("Looping before switching to user task.");
-                loop {}
+                todo!("Userspace is not yet supported!");
             }
 
             unsafe { next_active_task_ref.main_thread.unwrap().as_ref().context }

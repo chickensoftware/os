@@ -6,22 +6,21 @@ extern crate alloc;
 use alloc::{format, vec::Vec};
 use core::{arch::asm, fmt::Write, panic::PanicInfo};
 
+use chicken_util::{
+    graphics::font::Font,
+    memory::{paging::KERNEL_MAPPING_OFFSET, pmm::PageFrameAllocator},
+    BootInfo, PAGE_SIZE,
+};
 use log::error;
 use qemu_print::qemu_println;
 use uefi::{
     entry,
-    Handle,
     proto::console::text::{Color, Output},
-    Status, table::{Boot, boot::MemoryType, Runtime, SystemTable},
+    table::{boot::MemoryType, Boot, Runtime, SystemTable},
+    Handle, Status,
 };
 
-use chicken_util::{
-    BootInfo,
-    graphics::font::Font,
-    memory::{paging::KERNEL_MAPPING_OFFSET, pmm::PageFrameAllocator}, PAGE_SIZE,
-};
-
-use crate::memory::{allocate_boot_info, allocate_kernel_stack, KernelInfo, set_up_address_space};
+use crate::memory::{allocate_boot_info, allocate_kernel_stack, set_up_address_space, KernelInfo};
 
 mod file;
 mod graphics;
@@ -140,7 +139,6 @@ fn main(image_handle: Handle, mut system_table: SystemTable<Boot>) -> Status {
 
     // set up basic memory management and the virtual address space for the higher half kernel
     let address_space_info = set_up_address_space(&mmap, kernel_info);
-
     // note: validate is no longer available after switching to graphics mode
     let (pml4_address, virtual_rsp, kernel_boot_info_virtual_address, pmm) =
         address_space_info.unwrap();
@@ -247,7 +245,9 @@ fn drop_boot_services(
                 | MemoryType::BOOT_SERVICES_CODE => ChickenMemoryType::Available,
                 // mark mmap data, boot info, font data, ... as kernel data
                 MemoryType::LOADER_DATA => ChickenMemoryType::KernelData,
-                MemoryType::ACPI_RECLAIM | MemoryType::ACPI_NON_VOLATILE  => ChickenMemoryType::AcpiData,
+                MemoryType::ACPI_RECLAIM | MemoryType::ACPI_NON_VOLATILE => {
+                    ChickenMemoryType::AcpiData
+                }
                 _ => ChickenMemoryType::Reserved,
             }
         };

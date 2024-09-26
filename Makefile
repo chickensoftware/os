@@ -75,11 +75,11 @@ run: all
 	@echo "Copying font file to boot directory..."
 	@cp $(FONT_DIR)/$(FONT_FILE) $(ESP_DIR)/font.psf
 	@echo "Running QEMU..."
-	@qemu-system-x86_64 -enable-kvm \
+	@qemu-system-x86_64 \
 		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
 		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_VARS) \
-		-drive format=raw,file=fat:rw:$(ESP_DIR) \
-		-d int -D $(QEMU_LOG) -no-reboot -serial stdio -m 256M
+		-drive format=raw,file=fat:rw:$(ESP_DIR)  \
+		-D $(QEMU_LOG) -no-reboot -serial stdio -m 256M
 
 .PHONY: usb
 usb: all
@@ -101,4 +101,3 @@ usb: all
 	@echo "Unmounting USB drive..."
 	@sudo umount /mnt
 	@echo "USB drive is ready to boot."
-

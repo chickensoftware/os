@@ -11,7 +11,7 @@ use chicken_util::{
     BootInfo, PAGE_SIZE,
 };
 use memory::paging::PTM;
-use qemu_print::qemu_println;
+use qemu_print::{qemu_print, qemu_println};
 use scheduling::task::{ProgramData, TaskEntry};
 
 use crate::{

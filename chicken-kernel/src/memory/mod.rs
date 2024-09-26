@@ -25,12 +25,10 @@ pub(crate) mod vmm;
 pub(super) fn set_up(boot_info: &BootInfo) -> BootInfo {
     // get physical memory manager
     let pmm = unsafe { (boot_info.pmm_address as *const PageFrameAllocator).read() };
-
     // set up paging
     let (mut owned_manager, mut boot_info) = paging::setup(pmm, boot_info).unwrap();
     let manager = owned_manager.manager();
     let pml4 = manager.pml4_physical() as u64;
-
     // switch to new paging scheme
     unsafe {
         paging::enable(pml4);
@@ -38,13 +36,10 @@ pub(super) fn set_up(boot_info: &BootInfo) -> BootInfo {
 
     // initialize static global page table manager
     GlobalPageTableManager::init(owned_manager);
-
     // initialize kernel heap
     LockedHeap::init(VIRTUAL_KERNEL_HEAP_BASE, KERNEL_HEAP_PAGE_COUNT).unwrap();
-
     // initialize static global vmm
     GlobalVirtualMemoryManager::init(VIRTUAL_VMM_BASE, VMM_PAGE_COUNT);
-
     // use vmm to map framebuffer
     mmio(&mut boot_info).unwrap();
     let mut vmm = VMM.lock();

@@ -54,7 +54,7 @@ impl<'a> PageFrameAllocator<'a> {
         let bit_map = BitMap {
             buffer: bit_map_buffer,
         };
-        let free_memory = total_available_memory(&memory_map);
+        let free_memory = total_memory(&memory_map);
 
         let mut instance = Self {
             memory_map,
@@ -67,7 +67,6 @@ impl<'a> PageFrameAllocator<'a> {
         };
         // reserve frames for bitmap
         instance.reserve_frames(largest_memory_area_ptr as u64, instance.bit_map.pages())?;
-
         // reserve reserved memory descriptors (including kernel code, data, stack)
         let mmap = instance.memory_map;
 
@@ -77,7 +76,6 @@ impl<'a> PageFrameAllocator<'a> {
             .try_for_each(|desc| {
                 instance.reserve_frames(desc.phys_start, desc.num_pages as usize)
             })?;
-
         Ok(instance)
     }
 
@@ -277,6 +275,11 @@ pub fn total_available_memory(mmap: &MemoryMap) -> u64 {
         .filter(|desc| desc.r#type == MemoryType::Available)
         .map(|desc| desc.size())
         .sum()
+}
+
+/// Returns total amount of memory in bytes based on memory map.
+pub fn total_memory(mmap: &MemoryMap) -> u64 {
+    mmap.descriptors().iter().map(|desc| desc.size()).sum()
 }
 
 #[derive(Copy, Clone, Debug)]
