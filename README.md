@@ -2,6 +2,9 @@
 
 ChickenOS is a lightweight hobby operating system for x86-64 developed in Rust.
 
+## Important Mention
+The userspace setup is currently under active development. At the moment, it is causing a triple fault during execution. Further debugging and improvements are ongoing to resolve this issue.
+
 ## Features
 
 - **Higher Half Kernel**: Built from scratch with Rust, providing a safe and modern approach to systems programming.
@@ -34,11 +37,11 @@ make usb USB_DEVICE=/dev/<device> release=true
 
 ## Progress Overview
 
-### Kernel Entry 
-- [x] Higher Half Kernel Entry 
+### Kernel Entry
+- [x] Higher Half Kernel Entry
 - [x] Basic Bootloader
 
-### Kernel Base 
+### Kernel Base
 - [x] Global Descriptor Table
 - [x] Interrupt Handling
 - [ ] Complete ISR
@@ -53,7 +56,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [ ] Keyboard support
     - [x] Receive Scancodes
     - [x] Basic Keyboard Driver
-    - [ ] Proper Keyboard Driver  
+    - [ ] Proper Keyboard Driver
 
 ### Memory Management
 - [x] Custom Memory Map
@@ -61,8 +64,8 @@ make usb USB_DEVICE=/dev/<device> release=true
 - [x] Paging
 - [x] Global Page Table Manager
 - [x] Virtual Memory Manager
-- [x] Global Virtual Memory Manager 
-- [x] Basic Kernel Heap Allocator 
+- [x] Global Virtual Memory Manager
+- [x] Basic Kernel Heap Allocator
     - [x] Bump Allocator
     - [x] Linked List Allocator
 - [ ] Full-fetched Kernel Heap Allocator
@@ -75,7 +78,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 
 ### Scheduling
 - [x] Scheduler
-- [x] Processes: todo: fix process isolation pml4 switch 
+- [x] Processes: todo: fix process isolation pml4 switch
 - [ ] Resources
 - [x] Threads
 - [ ] Thread API

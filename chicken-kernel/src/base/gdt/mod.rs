@@ -1,17 +1,28 @@
 use core::cell::OnceCell;
 
 use bitflags::bitflags;
+use descriptor::SegmentDescriptor;
+use tss::{TaskStateSegment, TSS};
 
 use crate::scheduling::spin::SpinLock;
 
+mod descriptor;
+mod tss;
+
 pub(crate) const KERNEL_CS: u16 = 0x08;
-// note: data segments is also used for stack allocation of new kernel processes.
+// note: data segment is also used for stack allocation of new kernel processes.
 pub(crate) const KERNEL_DS: u16 = 0x10;
+
+// 3 for user dpl
+pub(crate) const USER_CS: u16 = 0x18 | 3;
+// note: data segment is also used for stack allocation of new user processes.
+pub(crate) const USER_DS: u16 = 0x20 | 3;
 
 static GDT: SpinLock<OnceCell<GlobalDescriptorTable>> = SpinLock::new(OnceCell::new());
 
 extern "C" {
     fn load_gdt(gdt: *const GdtDescriptor);
+    fn load_tss();
 }
 
 pub(super) fn initialize() {
@@ -22,9 +33,9 @@ pub(super) fn initialize() {
         size: (size_of::<GlobalDescriptorTable>() - 1) as u16,
         offset: gdt as *const _ as u64,
     };
-
     unsafe {
         load_gdt(&gdt_desc as *const GdtDescriptor);
+        load_tss();
     }
 }
 
@@ -33,76 +44,6 @@ pub(super) fn initialize() {
 struct GdtDescriptor {
     size: u16,
     offset: u64,
-}
-
-#[repr(C, packed)]
-#[derive(Debug, Copy, Clone, Default)]
-struct SegmentDescriptor {
-    limit_low: u16,
-    base_low: u16,
-    base_middle: u8,
-    access: AccessByte,
-    /// limit_high + flags
-    granularity: u8,
-    base_high: u8,
-}
-
-impl SegmentDescriptor {
-    fn new(base: u32, limit: u32, access: AccessByte, flags: SegmentDescriptorFlags) -> Self {
-        Self {
-            limit_low: (limit & 0xFFFF) as u16,
-            base_low: (base & 0xFFFF) as u16,
-            base_middle: ((base >> 16) & 0xFF) as u8,
-            access,
-            granularity: ((limit >> 16) & 0x0F) as u8 | (flags.bits() & 0xF0),
-            base_high: ((base >> 24) & 0xFF) as u8,
-        }
-    }
-
-    fn kernel_code() -> Self {
-        SegmentDescriptor::new(
-            0,
-            0xFFFFF,
-            AccessByte::PRESENT
-                | AccessByte::DESCRIPTOR_TYPE
-                | AccessByte::EXECUTABLE
-                | AccessByte::READABLE_WRITEABLE,
-            SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
-        )
-    }
-    fn kernel_data() -> Self {
-        SegmentDescriptor::new(
-            0,
-            0xFFFFF,
-            AccessByte::PRESENT | AccessByte::DESCRIPTOR_TYPE | AccessByte::READABLE_WRITEABLE,
-            SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
-        )
-    }
-
-    fn user_code() -> Self {
-        SegmentDescriptor::new(
-            0,
-            0xFFFFF,
-            AccessByte::PRESENT
-                | AccessByte::DPL
-                | AccessByte::DESCRIPTOR_TYPE
-                | AccessByte::EXECUTABLE
-                | AccessByte::CONFORMING_DIRECTION,
-            SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
-        )
-    }
-
-    fn user_data() -> Self {
-        SegmentDescriptor::new(
-            0,
-            0xFFFFF,
-            AccessByte::PRESENT
-                | AccessByte::DPL
-                | AccessByte::DESCRIPTOR_TYPE
-                | AccessByte::CONFORMING_DIRECTION,
-            SegmentDescriptorFlags::LONG_MODE | SegmentDescriptorFlags::GRANULARITY,
-        )
-    }
 }
 
 #[allow(dead_code)]
@@ -114,16 +55,25 @@ struct GlobalDescriptorTable {
     kernel_data: SegmentDescriptor,
     user_code: SegmentDescriptor,
     user_data: SegmentDescriptor,
+    tss_low: SegmentDescriptor,
+    tss_high: SegmentDescriptor,
 }
 
 impl GlobalDescriptorTable {
     fn new() -> Self {
+        // initialize tss
+        let binding = TSS.lock();
+        let tss = binding.get_or_init(|| unsafe { TaskStateSegment::create() });
+        let (tss_low, tss_high) = unsafe { SegmentDescriptor::tss(&tss) };
+
         GlobalDescriptorTable {
             null: SegmentDescriptor::default(),
             kernel_code: SegmentDescriptor::kernel_code(),
             kernel_data: SegmentDescriptor::kernel_data(),
             user_code: SegmentDescriptor::user_code(),
             user_data: SegmentDescriptor::user_data(),
+            tss_low,
+            tss_high,
         }
     }
 }

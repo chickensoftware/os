@@ -115,7 +115,14 @@ pub(crate) struct CpuState {
 }
 
 impl CpuState {
-    pub(crate) fn basic(iretq_ss: u64, iretq_rsp: u64, iretq_flags: RFlags, iretq_cs: u64, iretq_rip: u64, rbp: u64) -> Self {
+    pub(crate) fn basic(
+        iretq_ss: u64,
+        iretq_rsp: u64,
+        iretq_flags: RFlags,
+        iretq_cs: u64,
+        iretq_rip: u64,
+        rbp: u64,
+    ) -> Self {
         Self {
             r15: 0,
             r14: 0,

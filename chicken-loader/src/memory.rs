@@ -5,24 +5,23 @@ use alloc::{
 };
 use core::ptr;
 
+use chicken_util::{
+    memory::{
+        paging::{
+            manager::OwnedPageTableManager, PageEntryFlags, PageTable, KERNEL_STACK_MAPPING_OFFSET,
+        },
+        pmm::{PageFrameAllocator, PageFrameAllocatorError},
+        PhysicalAddress, VirtualAddress,
+    },
+    PAGE_SIZE,
+};
 use uefi::{
     prelude::BootServices,
     table::{
         boot::{AllocateType::AnyPages, MemoryType},
-        Boot,
-        cfg::{ACPI2_GUID, ACPI_GUID}, SystemTable,
+        cfg::{ACPI2_GUID, ACPI_GUID},
+        Boot, SystemTable,
     },
-};
-
-use chicken_util::{
-    memory::{
-        paging::{
-            KERNEL_STACK_MAPPING_OFFSET, manager::PageTableManager, PageEntryFlags, PageTable,
-        },
-        PhysicalAddress,
-        pmm::{PageFrameAllocator, PageFrameAllocatorError}, VirtualAddress,
-    },
-    PAGE_SIZE,
 };
 
 use crate::{ChickenMemoryDescriptor, ChickenMemoryMap, KERNEL_MAPPING_OFFSET, KERNEL_STACK_SIZE};
@@ -98,9 +97,7 @@ pub(super) fn set_up_address_space(
 
     // set up physical memory manager
     let mut pmm = PageFrameAllocator::try_new(*memory_map)?;
-
     let pml4_addr = pmm.request_page()?;
-
     assert_eq!(
         (pml4_addr as usize) % align_of::<PageTable>(),
         0,
@@ -108,22 +105,19 @@ pub(super) fn set_up_address_space(
     );
 
     let pml4_table = pml4_addr as *mut PageTable;
-
     // zero out new table
     unsafe { ptr::write_bytes(pml4_table, 0, 1) };
 
-    let mut manager = PageTableManager::new(pml4_table, pmm);
-    let first_addr = memory_map.first_addr;
-    let last_addr = memory_map.last_addr;
-    let page_count = ((last_addr - first_addr) as usize + PAGE_SIZE - 1) / PAGE_SIZE;
-
-    for page in 0..page_count {
-        let physical_address = (PAGE_SIZE * page) as u64 + first_addr;
-        manager.map_memory(
-            physical_address,
-            physical_address,
-            PageEntryFlags::default(),
-        )?;
+    let mut manager = OwnedPageTableManager::new(pml4_table, pmm);
+    for desc in memory_map.descriptors().iter() {
+        for page in 0..desc.num_pages {
+            let physical_address = PAGE_SIZE as u64 * page + desc.phys_start;
+            manager.map_memory(
+                physical_address,
+                physical_address,
+                PageEntryFlags::default(),
+            )?;
+        }
     }
 
     // map higher half kernel virtual addresses to physical kernel addresses
@@ -150,7 +144,6 @@ pub(super) fn set_up_address_space(
     )?;
 
     let pmm: PageFrameAllocator = manager.into();
-
     Ok((
         pml4_addr,
         KERNEL_STACK_MAPPING_OFFSET + KERNEL_STACK_SIZE as u64,

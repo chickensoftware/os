@@ -188,9 +188,12 @@ impl VirtualMemoryManager {
                     let page_count = current_ref.length / PAGE_SIZE;
                     // free regions in vmm memory segment
                     for page in 0..page_count {
+                        let virtual_address = address + (page * PAGE_SIZE) as u64;
                         // unmap virtual address
                         let physical_address = ptm
-                            .unmap(address + (page * PAGE_SIZE) as u64)
+                            .manager()
+                            .unmap(virtual_address)
+                            .ok_or(PagingError::AddressNotMapped(virtual_address))
                             .map_err(VmmError::from)?;
 
                         // free physical page frames

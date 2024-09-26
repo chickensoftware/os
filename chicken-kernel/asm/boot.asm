@@ -27,3 +27,9 @@ section .text
         push rax
         push rdi
         retfq
+
+    global load_tss
+
+    load_tss:
+        ltr 0x28
+        ret

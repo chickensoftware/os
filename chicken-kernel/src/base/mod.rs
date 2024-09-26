@@ -1,14 +1,17 @@
 use chicken_util::BootInfo;
 
-use crate::base::interrupts::idt;
-use crate::base::io::timer::pit::PIT;
-use crate::base::io::timer::Timer;
-use crate::println;
+use crate::{
+    base::{
+        interrupts::idt,
+        io::timer::{pit::PIT, Timer},
+    },
+    println,
+};
 
 mod acpi;
-pub(crate) mod io;
 pub(crate) mod gdt;
 pub(crate) mod interrupts;
+pub(crate) mod io;
 pub(crate) mod msr;
 
 pub(super) fn set_up(boot_info: &BootInfo) {
@@ -17,5 +20,8 @@ pub(super) fn set_up(boot_info: &BootInfo) {
     idt::initialize();
     println!("kernel: Set up idt.");
     io::initialize(boot_info);
-    println!("kernel: Set up io, pit frequency: {}.", PIT.lock().frequency());
+    println!(
+        "kernel: Set up io, pit frequency: {}.",
+        PIT.lock().frequency()
+    );
 }
