@@ -4,6 +4,7 @@ use chicken_util::memory::VirtualAddress;
 
 use crate::{
     base::interrupts::without_interrupts,
+    println,
     scheduling::{SchedulerError, SCHEDULER},
 };
 
@@ -51,7 +52,9 @@ pub(crate) fn spawn_thread(
 /// Spawns a new process.
 pub(crate) fn spawn_process(entry: TaskEntry, name: Option<String>) -> Result<(), SchedulerError> {
     without_interrupts(|| -> Result<(), SchedulerError> {
+        println!("spawning the da new task!");
         let mut scheduler = SCHEDULER.lock();
+        qemu_print::qemu_print!("got lock");
         assert!(
             scheduler.get_mut().is_some(),
             "Tasks can only be spawned after global task scheduler has been initialized."

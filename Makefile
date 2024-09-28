@@ -79,7 +79,7 @@ run: all
 		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
 		-drive if=pflash,format=raw,readonly=on,file=$(OVMF_VARS) \
 		-drive format=raw,file=fat:rw:$(ESP_DIR)  \
-		-D $(QEMU_LOG) -no-reboot -serial stdio -m 256M
+		-D $(QEMU_LOG) -d cpu_reset,int -no-reboot -serial file:$(QEMU_LOG) -m 256M
 
 .PHONY: usb
 usb: all

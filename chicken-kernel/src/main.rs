@@ -5,13 +5,13 @@ extern crate alloc;
 
 use core::{arch::asm, panic::PanicInfo};
 
-use base::interrupts::without_interrupts;
+use base::interrupts::{self, without_interrupts};
 use chicken_util::{
     memory::paging::{index::PageMapIndexer, PageEntryFlags},
     BootInfo, PAGE_SIZE,
 };
 use memory::paging::PTM;
-use qemu_print::{qemu_print, qemu_println};
+use qemu_print::qemu_println;
 use scheduling::task::{ProgramData, TaskEntry};
 
 use crate::{
@@ -26,14 +26,17 @@ mod video;
 
 #[no_mangle]
 pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
+    qemu_println!("success!");
     let boot_info = memory::set_up(boot_info);
     video::set_up(&boot_info);
     println!("kernel: Memory Management has been set up successfully.");
     println!("kernel: Video output has been set up successfully.");
     base::set_up(&boot_info);
+    qemu_println!("base done!");
     println!("kernel: Base Architecture has been set up successfully.");
     scheduling::set_up();
     println!("kernel: Scheduler set up.");
+    qemu_println!("now enabling!");
     base::interrupts::enable();
     // is never reached, because task scheduler starts when interrupts are enabled.
     hlt_loop();
@@ -41,7 +44,7 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
 
 pub(crate) fn main_task() {
     println!("Hello, from main task!");
-
+    todo!("bug fixes: thread switching");
     fn hello() {
         println!("Hello, from new main task thread.");
 
@@ -59,7 +62,7 @@ pub(crate) fn main_task() {
     println!("{}", get_current_uptime_ms());
 
     println!("before");
-    println!("now spawning");
+    qemu_println!("now spawning");
     let virtual_addr = 0x1000000;
 
     without_interrupts(|| {
@@ -76,6 +79,7 @@ pub(crate) fn main_task() {
             "mapping: virt: {:#x} to phys: {:#x} TEST",
             virtual_addr, physical
         );
+        println!("EHH");
         let indexer = PageMapIndexer::new(virtual_addr);
         println!("before mapping indexer p_i: {:#x}", indexer.p_i());
         manager.map_memory(virtual_addr, physical, flags).unwrap();
@@ -84,15 +88,19 @@ pub(crate) fn main_task() {
             manager.manager().pml4_physical(),
             manager.manager().pml4_virtual()
         );
+        drop(ptm);
+
+        task::spawn_process(
+            TaskEntry::User(ProgramData {
+                virt_start: virtual_addr,
+                virt_end: virtual_addr + PAGE_SIZE as u64,
+            }),
+            None,
+        )
+        .unwrap();
     });
-    task::spawn_process(
-        TaskEntry::User(ProgramData {
-            virt_start: virtual_addr,
-            virt_end: virtual_addr + PAGE_SIZE as u64,
-        }),
-        None,
-    )
-    .unwrap();
+
+    println!("done!!!");
 
     GlobalTaskScheduler::kill_active();
 }
@@ -103,6 +111,7 @@ fn test_user() {
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    interrupts::disable();
     qemu_println!("panic: {}", info);
     println!("panic: {}", info);
 

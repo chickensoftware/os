@@ -37,6 +37,7 @@ pub(super) fn initialize() {
         load_gdt(&gdt_desc as *const GdtDescriptor);
         load_tss();
     }
+    qemu_print::qemu_println!("loaded tss!");
 }
 
 #[repr(C, packed)]
@@ -64,7 +65,7 @@ impl GlobalDescriptorTable {
         // initialize tss
         let binding = TSS.lock();
         let tss = binding.get_or_init(|| unsafe { TaskStateSegment::create() });
-        let (tss_low, tss_high) = unsafe { SegmentDescriptor::tss(&tss) };
+        let (tss_low, tss_high) = unsafe { SegmentDescriptor::tss(tss) };
 
         GlobalDescriptorTable {
             null: SegmentDescriptor::default(),

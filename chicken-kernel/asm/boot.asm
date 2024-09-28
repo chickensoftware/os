@@ -26,10 +26,11 @@ section .text
         mov rax, 0x08
         push rax
         push rdi
-        retfq
+        retfq ; first pops instruction pointer and then CS
 
     global load_tss
 
     load_tss:
-        ltr 0x28
+        mov ax, 0x28
+        ltr ax
         ret

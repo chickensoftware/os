@@ -71,6 +71,7 @@ impl GlobalTaskScheduler {
 
     /// Mark currently active thread as dead.
     pub(crate) fn kill_active() {
+        qemu_print::qemu_println!("dead");
         // loop in case of interrupt during function call
         loop {
             without_interrupts(|| {
@@ -186,11 +187,14 @@ fn idle() {
 
 impl TaskScheduler {
     pub(crate) fn schedule(&mut self, context: *const CpuState, uptime: u64) -> *const CpuState {
+        qemu_print::qemu_println!("sched");
         if let Some(mut active_task) = self.active_task {
             let active_task = unsafe { active_task.as_mut() };
+            qemu_print::qemu_println!("active: {:?}", active_task);
             match active_task.get_next_thread(uptime) {
                 // switch to next process
                 NextThread::None => {
+                    qemu_print::qemu_println!("none next thread");
                     // store state of previously active thread
                     let currently_active_thread = unsafe { active_task.active_thread_mut() };
                     if currently_active_thread.status == ThreadStatus::Running {
@@ -206,11 +210,14 @@ impl TaskScheduler {
                 }
                 // switch to next process
                 NextThread::TaskDead => {
+                    qemu_print::qemu_println!("task dead");
                     // mark task as dead, so it gets removed later.
                     active_task.status = TaskStatus::Dead;
                 }
                 // execute next ready thread in current process
                 NextThread::Found(next_thread) => {
+                    qemu_print::qemu_println!("found next thread");
+
                     // save state of previously active thread
                     let active_thread = unsafe { active_task.active_thread_mut() };
                     if active_thread.status != ThreadStatus::Dead {
@@ -231,6 +238,7 @@ impl TaskScheduler {
             // no threads are ready in the current process
             self.switch_processes(active_task, context)
         } else {
+            qemu_print::qemu_println!("idle created");
             // first time context switch is called. start with IDLE task
             let idle = self.head;
             assert!(idle.is_some(), "Head Process must be idle task");
@@ -292,20 +300,26 @@ impl TaskScheduler {
         active_task: &mut Process,
         context: *const CpuState,
     ) -> *const CpuState {
+        qemu_print::qemu_println!("next proc");
         let next_active_task = self.get_next_process(active_task);
-
         // set up new next task and remove old one if it's dead
         if let Some(mut next_active_task) = next_active_task {
             let next_active_task_ref = unsafe { next_active_task.as_mut() };
+            qemu_print::qemu_print!("next act: {:?}", next_active_task_ref);
 
             // save currently active state if task is not dead
             if active_task.status != TaskStatus::Dead {
                 // only one active task left => short circuit
                 if active_task.pid == next_active_task_ref.pid {
+                    qemu_print::qemu_println!("short cicuiting!");
                     return context;
                 }
 
+                // save state of currently active task
                 active_task.status = TaskStatus::Ready;
+                unsafe {
+                    active_task.active_thread_mut().context = context;
+                }
             }
 
             // update new active task
@@ -352,11 +366,12 @@ impl TaskScheduler {
             PTM.unlock();
 
             if next_active_task_ref.user {
-                todo!("Userspace is not yet supported!");
+                qemu_print::qemu_println!("userHIHI");
             }
-
+            qemu_print::qemu_print!("SWITCH");
             unsafe { next_active_task_ref.main_thread.unwrap().as_ref().context }
         } else {
+            qemu_print::qemu_println!("no new");
             context
         }
     }
@@ -416,6 +431,7 @@ impl TaskScheduler {
         while let Some(mut current_task) = current {
             let current_task = unsafe { current_task.as_mut() };
             if current_task.next.is_none() {
+                qemu_print::qemu_println!("adding new taks: {}", self.id_counter);
                 let task_ptr = Process::create(
                     name.unwrap_or(format!("TASK-{}", self.id_counter)),
                     entry,

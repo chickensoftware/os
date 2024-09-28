@@ -81,7 +81,7 @@ where
     if were_enabled_flag {
         enable();
     }
-
+    qemu_print::qemu_println!("ret{}", were_enabled_flag);
     ret
 }
 

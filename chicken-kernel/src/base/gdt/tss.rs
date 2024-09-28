@@ -44,6 +44,7 @@ impl TaskStateSegment {
         );
         let vmm = vmm.unwrap();
 
+        // allocate permission level switch stack
         let stack_bottom = vmm
             .alloc(
                 KERNEL_INTERRUPT_STACK_SIZE + 1,
@@ -54,10 +55,26 @@ impl TaskStateSegment {
 
         let rsp0 = stack_bottom + KERNEL_INTERRUPT_STACK_SIZE as u64;
 
+        // allocate ist stack
+        let stack_bottom = vmm
+            .alloc(
+                KERNEL_INTERRUPT_STACK_SIZE + 1,
+                VmFlags::WRITE,
+                AllocationType::AnyPages,
+            )
+            .unwrap();
+
+        let ist0 = stack_bottom + KERNEL_INTERRUPT_STACK_SIZE as u64;
+
         Self {
             // effectively disable IO map => no longer used in modern systems.
             iopb: size_of::<TaskStateSegment>() as u16,
             rsp0,
+            ist: {
+                let mut ist = [0; 7];
+                ist[0] = ist0;
+                ist
+            },
             ..Default::default()
         }
     }

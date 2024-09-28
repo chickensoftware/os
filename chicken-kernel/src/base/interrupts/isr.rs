@@ -1,15 +1,20 @@
 use core::arch::asm;
-use crate::{base::{
-    interrupts::{CpuState, idt::InterruptDescriptorTable},
-    io,
-    io::{
-        inb,
-        keyboard::KEYBOARD,
-        timer::{pit::PIT, Timer},
+
+use crate::{
+    base::{
+        interrupts::{idt::InterruptDescriptorTable, CpuState},
+        io,
+        io::{
+            inb,
+            keyboard::KEYBOARD,
+            timer::{
+                pit::{ProgrammableIntervalTimer, PIT},
+                Timer,
+            },
+        },
     },
-}, println};
-use crate::base::interrupts::without_interrupts;
-use crate::base::io::timer::pit::ProgrammableIntervalTimer;
+    println,
+};
 
 extern "C" {
     fn vector_0_handler();
@@ -19,11 +24,12 @@ impl InterruptDescriptorTable {
     pub(super) fn setup_handlers(&mut self) {
         let initial_handler_address = vector_0_handler as *const u8;
         for vector_number in 0..=255u8 {
+            let dpl = if vector_number < 32 { 0 } else { 3 };
             self.set_handler(
                 vector_number,
                 unsafe { initial_handler_address.add(16 * vector_number as usize) } as u64,
                 0,
-                0,
+                dpl,
             );
         }
     }
@@ -31,10 +37,24 @@ impl InterruptDescriptorTable {
 
 #[no_mangle]
 pub fn interrupt_dispatch(mut state_ptr: *const CpuState) -> *const CpuState {
+    qemu_print::qemu_println!("a");
     let state = unsafe { *state_ptr };
     match state.vector_number {
         0 => {
             println!("exception: DIV BY 0");
+        }
+        // gpf
+        13 => {
+            let rip: u64;
+
+            unsafe {
+                asm!("lea {0}, [rip]", out(reg) rip);
+            }
+            panic!(
+                "exception: GENERAL PROTECTION FAULT. Error code: {:?}. RIP: {:#x}",
+                error_code::ErrorCode::from_bits_truncate(state.error_code as u32),
+                rip
+            );
         }
         // page fault
         14 => {
@@ -47,7 +67,7 @@ pub fn interrupt_dispatch(mut state_ptr: *const CpuState) -> *const CpuState {
             unsafe {
                 asm!("mov {}, cr2", out(reg) cr2);
             }
-            println!("Faulting page address: {:#x}", cr2);
+            panic!("Faulting page address: {:#x}", cr2);
         }
         32 => {
             state_ptr = pit_handler(state_ptr);
@@ -77,18 +97,17 @@ fn keyboard_handler() {
 }
 
 fn pit_handler(context: *const CpuState) -> *const CpuState {
-    without_interrupts(|| {
-        // increment tick counter
-        ProgrammableIntervalTimer::tick();
+    super::disable();
+    // increment tick counter
+    ProgrammableIntervalTimer::tick();
 
-        // context switch
-        let binding = PIT.lock();
-        let context = binding.perform_context_switch(context);
+    // context switch
+    let binding = PIT.lock();
+    let context = binding.perform_context_switch(context);
 
-        // send end of interrupt signal to lapic that sent the interrupt
-        io::apic::lapic::eoi();
-        context
-    })
+    // send end of interrupt signal to lapic that sent the interrupt
+    io::apic::lapic::eoi();
+    context
 }
 
 mod error_code {
