@@ -2,8 +2,8 @@
 
 ChickenOS is a lightweight hobby operating system for x86-64 developed in Rust.
 
-## Important Mention
-The userspace setup is currently under active development. At the moment, it is causing a triple fault during execution. Further debugging and improvements are ongoing to resolve this issue.
+## WIP
+The scheduler thread setup is currently under active development, since several bug-fixes are necessary.  
 
 ## Features
 
@@ -78,7 +78,7 @@ make usb USB_DEVICE=/dev/<device> release=true
 
 ### Scheduling
 - [x] Scheduler
-- [x] Processes: todo: fix process isolation pml4 switch
+- [x] Processes: todo: bug fixes
 - [ ] Resources
 - [x] Threads
 - [ ] Thread API
