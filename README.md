@@ -2,6 +2,10 @@
 
 ChickenOS is a lightweight hobby operating system for x86-64 developed in Rust.
 
+## WIP
+
+The scheduler thread setup is currently under active development, since several bug-fixes are necessary.
+
 ## Features
 
 - **Higher Half Kernel**: Built from scratch with Rust, providing a safe and modern approach to systems programming.
