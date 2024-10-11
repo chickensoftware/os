@@ -44,25 +44,29 @@ pub extern "sysv64" fn kernel_main(boot_info: &BootInfo) -> ! {
 
 pub(crate) fn main_task() {
     println!("Hello, from main task!");
-    todo!("bug fixes: thread switching");
+    // todo!("bug fixes: thread switching");
     fn hello() {
         println!("Hello, from new main task thread.");
-
+        qemu_print::qemu_print!("sleeping");
         GlobalTaskScheduler::sleep(10000);
 
         println!("Main task thread sleep complete.");
+        qemu_print::qemu_print!("killing active");
 
         GlobalTaskScheduler::kill_active();
     }
-
-    let thread_handle = task::spawn_thread(hello, None).unwrap();
-
-    GlobalTaskScheduler::join(thread_handle);
+    without_interrupts(|| {
+        let thread_handle = task::spawn_thread(hello, None).unwrap();
+        qemu_print::qemu_println!("spawned now joining!");
+        GlobalTaskScheduler::join(thread_handle);
+        qemu_print::qemu_print!("successfully joined");
+    });
 
     println!("{}", get_current_uptime_ms());
+    qemu_println!("{}", get_current_uptime_ms());
 
     println!("before");
-    qemu_println!("now spawning");
+    /* qemu_println!("now spawning");
     let virtual_addr = 0x1000000;
 
     without_interrupts(|| {
@@ -101,7 +105,8 @@ pub(crate) fn main_task() {
     });
 
     println!("done!!!");
-
+    */
+    qemu_println!("haha");
     GlobalTaskScheduler::kill_active();
 }
 

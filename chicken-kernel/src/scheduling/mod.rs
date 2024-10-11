@@ -131,8 +131,10 @@ impl GlobalTaskScheduler {
 
                 if let Some(ref mut joins) = thread.joins {
                     joins.push(handle.into_inner());
+                    qemu_print::qemu_print!("added to joins: {:?}", joins);
                 } else {
                     thread.joins = Some(vec![handle.into_inner()]);
+                    qemu_print::qemu_print!("created to joins: {:?}", thread.joins);
                 }
             }
         });
@@ -141,6 +143,7 @@ impl GlobalTaskScheduler {
     /// Set the current thread to sleep mode for the provided duration in milliseconds.
     pub(crate) fn sleep(duration_ms: u64) {
         without_interrupts(|| {
+            qemu_print::qemu_println!("SLEEP NOW");
             let uptime = get_current_uptime_ms();
             let mut binding = SCHEDULER.lock();
             if let Some(scheduler) = binding.get_mut() {
@@ -151,6 +154,7 @@ impl GlobalTaskScheduler {
                 let active = unsafe { scheduler.active_task.unwrap().as_mut() };
                 let thread = unsafe { active.active_thread_mut() };
                 thread.status = ThreadStatus::Sleep(uptime + duration_ms);
+                qemu_print::qemu_println!("active now sleeps: {:?}", thread);
             }
         });
         // cause context switch
@@ -220,9 +224,14 @@ impl TaskScheduler {
 
                     // save state of previously active thread
                     let active_thread = unsafe { active_task.active_thread_mut() };
-                    if active_thread.status != ThreadStatus::Dead {
+                    qemu_print::qemu_println!("currently active thread (fno): {:?}", active_thread);
+                    if !matches!(
+                        active_thread.status,
+                        ThreadStatus::Dead | ThreadStatus::Sleep(_)
+                    ) {
+                        qemu_print::qemu_println!("not dead changing: {:?}", active_thread);
                         active_thread.context = context;
-                        active_thread.status = ThreadStatus::Ready;
+                        active_thread.status = ThreadStatus::Ready; // this changes a sleeping thread to ready?!
                     }
 
                     // set active thread to found thread
@@ -230,7 +239,7 @@ impl TaskScheduler {
                     unsafe {
                         active_task.active_thread_mut().status = ThreadStatus::Running;
                     }
-
+                    // TODO: testing: using main thread instead of active thread
                     // return context of next thread
                     return unsafe { active_task.active_thread_ref().context };
                 }

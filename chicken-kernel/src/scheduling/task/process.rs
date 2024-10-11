@@ -244,6 +244,11 @@ impl Process {
 
             if let ThreadStatus::Sleep(wake_time_ms) = thread_ref.status {
                 if uptime >= wake_time_ms {
+                    qemu_print::qemu_print!(
+                        "checking if can be wooken: uptime: {}, wake time: {}",
+                        uptime,
+                        wake_time_ms
+                    );
                     thread_ref.status = ThreadStatus::Ready;
                 }
             }
@@ -261,6 +266,9 @@ impl Process {
         }
         // run the next thread in the current process.
         else {
+            qemu_print::qemu_println!("next thread: {:?}", unsafe {
+                next_thread.unwrap().as_ref()
+            });
             NextThread::Found(next_thread)
         }
     }
