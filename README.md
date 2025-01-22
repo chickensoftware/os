@@ -2,9 +2,7 @@
 
 ChickenOS is a lightweight hobby operating system for x86-64 developed in Rust.
 
-## WIP
-
-The scheduler thread setup is currently under active development, since several bug-fixes are necessary.
+This project is discontinued. But feel free to check out my current osdev project: [NereusOS](https://github.com/nereusfoundation/nereus-os)
 
 ## Features
 
